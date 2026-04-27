@@ -5,6 +5,21 @@ app_description = "POS for ERPNEXT developed by FadlTech team"
 app_email = "fadltechteam@mail.ru"
 app_license = "unlicense"
 
+# Fixtures — `bench --site <site> export-fixtures --app fadl_pos`
+# В Custom Field в Desk указывайте Module = "Fadl Pos", тогда поле попадёт в этот экспорт.
+fixtures = [
+	{
+		"doctype": "Custom Field",
+		"filters": [["module", "=", "Fadl Pos"]],
+	},
+	{
+		"doctype": "Property Setter",
+		"filters": [["module", "=", "Fadl Pos"]],
+	},
+]
+
+fixture_auto_order = True
+
 # Apps
 # ------------------
 
@@ -255,4 +270,5 @@ app_license = "unlicense"
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
+
 
