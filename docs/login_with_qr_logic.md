@@ -126,5 +126,6 @@ bench --site <ваш_сайт> run-tests --app fadl_pos
 | `fadl_pos/api/login/login_with_qr.py` | Эндпоинты `get_qr_data`, `login_with_qr` |
 | `fadl_pos/api/login/pin_cipher.py` | Шифрование / расшифровка blob от PIN |
 | `fadl_pos/tests/test_login_with_qr_api.py` | Интеграционные тесты |
+| `docs/openapi/login_with_qr.openapi.yaml` | OpenAPI 3 (Swagger): пути, тела запросов, обёртка `message`, безопасность — для фронтенда и генераторов клиента |
 
 При необходимости обновляйте этот документ при изменении контракта API или правил доступа.
