@@ -102,6 +102,7 @@ fixture_auto_order = True
 
 # before_install = "fadl_pos.install.before_install"
 # after_install = "fadl_pos.install.after_install"
+after_migrate = "fadl_pos.install.after_migrate"
 
 # Uninstallation
 # ------------
