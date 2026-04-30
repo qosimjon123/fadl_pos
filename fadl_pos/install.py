@@ -17,7 +17,7 @@ def after_migrate():
 					"fieldtype": "Long Text",
 					"insert_after": "api_secret",
 					"module": "Fadl Pos",
-					"description": "Encrypted POS login and permission payload.",
+					"description": "Current encrypted Fadl POS QR payload. Regenerated QR keys replace this value.",
 					"print_hide": 1,
 					"is_system_generated": 0,
 				}
