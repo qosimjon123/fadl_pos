@@ -1,0 +1,281 @@
+openapi: 3.0.3
+info:
+  title: Fadl POS Login API
+  version: "1.0.0"
+  description: >
+    Fadl POS authentication endpoints exposed as Frappe `/api/v2/method/...`
+    RPC calls. Frappe wraps successful responses in `data` and errors in
+    `errors`.
+servers:
+  - url: /
+security:
+  - BasicApiToken: []
+paths:
+  /api/v2/method/fadl_pos.api.login.login_endpoints.login:
+    post:
+      summary: Login with password
+      description: Returns `Basic base64(api_key:api_secret)` for a valid user.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/LoginRequest"
+                - $ref: "#/components/schemas/LegacyLoginRequest"
+            examples:
+              loginPassword:
+                value:
+                  login: user@example.com
+                  password: secret
+              usrPwd:
+                value:
+                  usr: user@example.com
+                  pwd: secret
+      responses:
+        "200":
+          description: Basic authorization token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthTokenEnvelope"
+        "401":
+          $ref: "#/components/responses/AuthenticationError"
+
+  /api/v2/method/fadl_pos.api.login.login_endpoints.generate_qr:
+    post:
+      summary: Generate QR payload
+      description: >
+        Generates a fresh PIN-encrypted QR payload for the current user and
+        stores it in `User.qr_encrypted_data`. Each call invalidates the
+        previous QR payload.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PinRequest"
+            examples:
+              pin:
+                value:
+                  pin_code: "123456"
+      responses:
+        "200":
+          description: Encrypted QR payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateQrEnvelope"
+        "401":
+          $ref: "#/components/responses/AuthenticationError"
+        "417":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v2/method/fadl_pos.api.login.login_endpoints.login_qr:
+    post:
+      summary: Login with encrypted QR payload and PIN
+      description: >
+        Decrypts the QR payload with the supplied PIN, validates that it is the
+        current stored QR payload for the user, and returns a Basic
+        authorization token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginQrRequest"
+            examples:
+              qr:
+                value:
+                  encrypted_qr: FP1...
+                  pin_code: "123456"
+      responses:
+        "200":
+          description: Basic authorization token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthTokenEnvelope"
+        "401":
+          $ref: "#/components/responses/AuthenticationError"
+
+  /api/v2/method/fadl_pos.api.login.login_endpoints.clear_sessions:
+    post:
+      summary: Clear sessions and rotate API secret
+      description: >
+        Rotates the current user's API secret and clears `User.qr_encrypted_data`.
+        Existing devices using the old token lose access. The response returns a
+        fresh Basic authorization token.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        "200":
+          description: New Basic authorization token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthTokenEnvelope"
+        "401":
+          $ref: "#/components/responses/AuthenticationError"
+
+components:
+  securitySchemes:
+    BasicApiToken:
+      type: http
+      scheme: basic
+      description: >
+        Frappe API Basic auth using `base64(api_key:api_secret)`. The endpoints
+        return the complete `Basic ...` Authorization header value.
+
+  responses:
+    AuthenticationError:
+      description: Authentication failed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/FrappeErrorEnvelope"
+          examples:
+            invalidPin:
+              value:
+                errors:
+                  - type: AuthenticationError
+                    message: Invalid PIN or encrypted QR payload
+                    title: Message
+                    indicator: red
+    ValidationError:
+      description: Validation failed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/FrappeErrorEnvelope"
+          examples:
+            missingField:
+              value:
+                errors:
+                  - type: ValidationError
+                    message: Missing User custom field qr_encrypted_data. Run bench migrate.
+                    title: Message
+                    indicator: red
+
+  schemas:
+    LoginRequest:
+      type: object
+      required:
+        - login
+        - password
+      additionalProperties: false
+      properties:
+        login:
+          type: string
+          example: user@example.com
+        password:
+          type: string
+          format: password
+          example: secret
+
+    LegacyLoginRequest:
+      type: object
+      required:
+        - usr
+        - pwd
+      additionalProperties: false
+      properties:
+        usr:
+          type: string
+          example: user@example.com
+        pwd:
+          type: string
+          format: password
+          example: secret
+
+    PinRequest:
+      type: object
+      required:
+        - pin_code
+      additionalProperties: false
+      properties:
+        pin_code:
+          type: string
+          pattern: "^[0-9]{6}$"
+          example: "123456"
+
+    LoginQrRequest:
+      type: object
+      required:
+        - encrypted_qr
+        - pin_code
+      additionalProperties: false
+      properties:
+        encrypted_qr:
+          type: string
+          example: FP1...
+        pin_code:
+          type: string
+          pattern: "^[0-9]{6}$"
+          example: "123456"
+
+    AuthTokenEnvelope:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: string
+          description: Complete Authorization header value.
+          pattern: "^Basic .+"
+          example: Basic YXBpX2tleTphcGlfc2VjcmV0
+
+    GenerateQrEnvelope:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - encrypted_qr
+          properties:
+            encrypted_qr:
+              type: string
+              example: FP1...
+
+    FrappeErrorEnvelope:
+      type: object
+      required:
+        - errors
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/FrappeErrorItem"
+        messages:
+          type: array
+          items: {}
+
+    FrappeErrorItem:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          example: AuthenticationError
+        message:
+          type: string
+          example: Invalid PIN or encrypted QR payload
+        title:
+          type: string
+          example: Message
+        indicator:
+          type: string
+          example: red
+        exception:
+          type: string
+          description: Traceback, present only when traceback output is allowed.

@@ -33,7 +33,7 @@ class BasicToken:
 	def as_authorization_header(self) -> str:
 		raw = f"{self.api_key}:{self.api_secret}".encode("utf-8")
 		encoded = base64.b64encode(raw).decode("ascii")
-		return f"Basic {encoded}"
+		return {'token': f"Basic {encoded}"}
 
 
 class TokenAuthService:
