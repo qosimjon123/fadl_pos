@@ -1,0 +1,21 @@
+---
+description: Use OpenAEC Frappe skills and local Fadl POS conventions for this workspace
+alwaysApply: true
+---
+
+# Fadl POS Frappe Guidance
+
+When a task touches `frappe-bench/apps/fadl_pos/**`, Frappe, ERPNext, bench, DocTypes, hooks, whitelisted APIs, client scripts, migrations, fixtures, permissions, database code, QR/POS login, or deployment, use the imported OpenAEC Frappe skills in `.cursor/skills/`.
+
+Start by selecting skills from `.cursor/reference/frappe-claude-skill-index.md`:
+
+- Form/UI behavior: `frappe-syntax-clientscripts`, `frappe-impl-clientscripts`, `frappe-errors-clientscripts`.
+- Whitelisted/API endpoints: `frappe-syntax-whitelisted`, `frappe-impl-whitelisted`, `frappe-core-api`, `frappe-errors-api`.
+- Hooks/custom app/migrations/fixtures: `frappe-syntax-hooks`, `frappe-syntax-hooks-events`, `frappe-impl-hooks`, `frappe-syntax-customapp`, `frappe-impl-customapp`.
+- DocTypes/controllers: `frappe-syntax-doctypes`, `frappe-syntax-controllers`, `frappe-impl-controllers`, `frappe-errors-controllers`.
+- Database/permissions: `frappe-core-database`, `frappe-core-permissions`, `frappe-errors-database`, `frappe-errors-permissions`.
+- Bench/ops/tests: `frappe-ops-bench`, `frappe-ops-app-lifecycle`, `frappe-testing-unit`, `frappe-testing-cicd`.
+
+For `fadl_pos`, prefer custom app code, hooks, migrations, fixtures, and focused tests over manual Desk-only changes. Never log secrets, API secrets, QR encrypted payloads, PINs, or decrypted token data. For core DocTypes such as `User`, use Custom Field creation from app code or a separate linked DocType; do not edit Frappe core unless explicitly requested.
+
+If the task is ambiguous, first use `frappe-agent-interpreter`; for debugging use `frappe-agent-debugger`; for review/validation use `frappe-agent-validator`.
