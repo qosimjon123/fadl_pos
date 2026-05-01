@@ -45,8 +45,8 @@ class TokenAuthService:
 		user = self._authenticate_password(login, password)
 		return self._ensure_basic_token(user).as_authorization_header()
 
-	def clear_sessions(self, user: str | None = None) -> str:
-		user = self._require_session_user(user)
+	def clear_sessions(self) -> str:
+		user = self._require_session_user()
 		doc = frappe.get_doc("User", user)
 		token = self._rotate_api_secret(doc)
 		self._set_qr_blob(doc, None)
@@ -54,9 +54,9 @@ class TokenAuthService:
 		frappe.db.commit()
 		return token.as_authorization_header()
 
-	def generate_qr(self, pin_code: str | None = None, user: str | None = None) -> dict[str, str]:
+	def generate_qr(self, pin_code: str | None = None) -> dict[str, str]:
 		pin = self._require_pin(pin_code)
-		user = self._require_session_user(user)
+		user = self._require_session_user()
 		doc = frappe.get_doc("User", user)
 		token = self._ensure_basic_token_for_doc(doc)
 		payload = {
