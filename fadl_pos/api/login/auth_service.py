@@ -76,6 +76,12 @@ class TokenAuthService:
 		return {"encrypted_qr": encrypted_qr}
 
 	def login_qr(self, encrypted_qr: str | None = None, pin_code: str | None = None) -> str:
+		user = self.verify_qr_user(encrypted_qr=encrypted_qr, pin_code=pin_code)
+		doc = frappe.get_doc("User", user)
+		return self._ensure_basic_token_for_doc(doc).as_authorization_header()
+
+	def verify_qr_user(self, encrypted_qr: str | None = None, pin_code: str | None = None) -> str:
+		"""Return the enabled user represented by QR+PIN without creating a login response."""
 		encrypted_qr = (encrypted_qr or "").strip()
 		if not encrypted_qr:
 			_auth_error("Encrypted QR payload is required")
@@ -99,7 +105,7 @@ class TokenAuthService:
 		if (doc.get(self.qr_fieldname) or "").strip() != encrypted_qr:
 			_auth_error("QR token has expired or was regenerated")
 
-		return self._ensure_basic_token_for_doc(doc).as_authorization_header()
+		return user
 
 	def _authenticate_password(self, login: str | None, password: str | None) -> str:
 		login = (login or "").strip()

@@ -84,7 +84,13 @@ class TestGetPosProfileListBlackbox(IntegrationTestCase):
 		for row in out["profiles"]:
 			self.assertIn("name", row)
 			self.assertIn("shift", row)
+			self.assertIn("permissions", row)
+			self.assertIn("checklists", row)
+			self.assertIn("payment_methods", row)
 			self.assertIsInstance(row["shift"], dict)
+			self.assertIsInstance(row["permissions"], dict)
+			self.assertIn("can_open", row["permissions"])
+			self.assertIn("can_close", row["permissions"])
 			if row["shift"]:
 				self.assertIn("is_open", row["shift"])
 
