@@ -1,6 +1,6 @@
 # Copyright (c) 2026, FadlTech team and contributors
 
-"""Fadl POS token endpoints for Frappe `/api/v2/method/...` RPC calls."""
+"""Fadl POS token endpoints for Frappe `/api/method/...` RPC calls."""
 
 from __future__ import annotations
 

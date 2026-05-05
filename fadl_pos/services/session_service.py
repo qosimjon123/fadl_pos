@@ -4,11 +4,7 @@ import frappe
 from frappe import _
 
 from fadl_pos.services._base import BaseService
-from erpnext.selling.page.point_of_sale.point_of_sale import (
-    check_opening_entry,
-    create_opening_voucher,
-    get_pos_profile_data
-)
+
 from erpnext.accounts.doctype.pos_closing_entry.pos_closing_entry import make_closing_entry_from_opening
 
 from fadl_pos.serializers.session import (
@@ -36,6 +32,25 @@ class SessionService(BaseService):
             as_dict=True
         )
 
+    def _create_opening_voucher(self, pos_profile, company, balance_details):
+        """
+        rewrited native create_opening_voucher from point-of-sale.py
+        """
+        new_pos_opening = frappe.get_doc(
+            {
+                "doctype": "POS Opening Entry",
+                "period_start_date": frappe.utils.get_datetime(),
+                "posting_date": frappe.utils.getdate(),
+                "user": frappe.session.user,
+                "pos_profile": pos_profile,
+                "company": company,
+            }
+        )
+        new_pos_opening.set("balance_details", balance_details)
+        new_pos_opening.submit()
+
+        return new_pos_opening.as_dict()
+        
     def _check_opening_entry(self, user):
         """
         rewrited native check_opening_entry from point-of-sale.py
@@ -66,10 +81,10 @@ class SessionService(BaseService):
             
             # Determine session status
             opening_entry_name = None
-            status = "Inactive"
+            status = "Close"
             if active_entry and active_entry.pos_profile == profile_name:
                 opening_entry_name = active_entry.name
-                status = "Active"
+                status = "Open"
 
             profile_dict = {
                 "name": profile_name,
@@ -78,8 +93,8 @@ class SessionService(BaseService):
                 "opening_entry": opening_entry_name,
             }
 
-            # If the shift is inactive, we need to gather opening requirements
-            if status == "Inactive":
+            # If the shift is closed, we need to gather opening requirements
+            if status == "Close":
                 # Fetch payment methods for this profile
                 payment_docs = frappe.db.get_all(
                     "POS Payment Method",
@@ -122,15 +137,14 @@ class SessionService(BaseService):
         if not pos_profile or not company:
             frappe.throw(_("POS Profile and Company are required to open a shift."))
             
-        if isinstance(balance_details, (list, dict)):
-            balance_details = frappe.as_json(balance_details)
+
 
         # check_opening_entry verifies if user already has an open shift
-        open_vouchers = check_opening_entry(self.user)
+        open_vouchers = self._check_opening_entry(self.user)
         if open_vouchers:
             frappe.throw(_("You already have an open shift: {0}").format(open_vouchers[0].name))
 
-        create_opening_voucher(pos_profile, company, balance_details)
+        self._create_opening_voucher(pos_profile, company, balance_details)
         
         # Return the simplified active profile list, ensuring consistency
         return self.get_list()
