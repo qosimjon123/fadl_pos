@@ -12,10 +12,10 @@ from erpnext.selling.page.point_of_sale.point_of_sale import (
 from erpnext.accounts.doctype.pos_closing_entry.pos_closing_entry import make_closing_entry_from_opening
 
 from fadl_pos.serializers.session import (
-    PosProfileNative,
     SessionListResponseSerializer,
-    PosProfileResponseSerializer,
-    PaymentMethodSerializer
+    ClosingReconciliationItem,
+    CloseShiftResponse,
+    BalanceDetailItem
 )
 
 class SessionService(BaseService):
@@ -114,7 +114,7 @@ class SessionService(BaseService):
 
 
 
-    def open_shift(self, pos_profile: str, company: str, balance_details: str | list | dict):
+    def open_shift(self, pos_profile: str, company: str, balance_details: List[BalanceDetailItem]) -> List[SessionListResponseSerializer]:
         """
         Create a new POS Opening Entry (open shift).
         balance_details: list of dicts with 'mode_of_payment' and 'opening_amount'
@@ -130,10 +130,12 @@ class SessionService(BaseService):
         if open_vouchers:
             frappe.throw(_("You already have an open shift: {0}").format(open_vouchers[0].name))
 
-        new_entry = create_opening_voucher(pos_profile, company, balance_details)
-        return new_entry
+        create_opening_voucher(pos_profile, company, balance_details)
+        
+        # Return the simplified active profile list, ensuring consistency
+        return self.get_list()
 
-    def close_shift(self, opening_entry_name: str, closing_data: dict = None):
+    def close_shift(self, opening_entry_name: str, closing_data: List[ClosingReconciliationItem] = None) -> CloseShiftResponse:
         """
         Create and submit a POS Closing Entry from an opening entry.
         """
@@ -148,11 +150,9 @@ class SessionService(BaseService):
         closing_entry = make_closing_entry_from_opening(opening_entry)
         
         # 2. Update actual balances based on user input (closing_data)
-        if closing_data and closing_data.get("payment_reconciliation"):
-            # Update expected amounts
-            actual_payments = closing_data.get("payment_reconciliation")
+        if closing_data:
             # Map by mode_of_payment
-            actual_map = {p.get("mode_of_payment"): flt(p.get("closing_amount", 0)) for p in actual_payments}
+            actual_map = {p.get("mode_of_payment"): frappe.utils.flt(p.get("closing_amount", 0)) for p in closing_data}
             
             for row in closing_entry.payment_reconciliation:
                 if row.mode_of_payment in actual_map:
@@ -162,4 +162,7 @@ class SessionService(BaseService):
         closing_entry.insert(ignore_permissions=True)
         closing_entry.submit()
         
-        return closing_entry.as_dict()
+        return {
+            "status": "success",
+            "closing_entry": closing_entry.name
+        }

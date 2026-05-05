@@ -1,5 +1,22 @@
 from typing import TypedDict, List, Optional
 
+class BalanceDetailItem(TypedDict):
+    mode_of_payment: str
+    opening_amount: float
+
+class OpenShiftRequest(TypedDict):
+    pos_profile: str
+    company: str
+    balance_details: List[BalanceDetailItem]
+
+class ClosingReconciliationItem(TypedDict):
+    mode_of_payment: str
+    closing_amount: float
+
+class CloseShiftResponse(TypedDict):
+    status: str
+    closing_entry: str
+
 # --- API Response Serializers ---
 
 class ChecklistSection(TypedDict):

@@ -33,7 +33,7 @@ class BasicToken:
 	def as_authorization_header(self) -> str:
 		raw = f"{self.api_key}:{self.api_secret}".encode("utf-8")
 		encoded = base64.b64encode(raw).decode("ascii")
-		return {'token': f"Basic {encoded}"}
+		return f"Basic {encoded}"
 
 
 class TokenAuthService:
@@ -41,20 +41,21 @@ class TokenAuthService:
 
 	qr_fieldname = "qr_encrypted_data"
 
-	def login(self, login: str | None = None, password: str | None = None) -> str:
-		user = self._authenticate_password(login, password)
-		return self._ensure_basic_token(user).as_authorization_header()
+	from fadl_pos.serializers.login import AuthTokenResponse, QRGenerateResponse
 
-	def clear_sessions(self) -> str:
+	def login(self, login: str | None = None, password: str | None = None) -> AuthTokenResponse:
+		user = self._authenticate_password(login, password)
+		return {"token": self._ensure_basic_token(user).as_authorization_header()}
+
+	def clear_sessions(self) -> AuthTokenResponse:
 		user = self._require_session_user()
 		doc = frappe.get_doc("User", user)
 		token = self._rotate_api_secret(doc)
 		self._set_qr_blob(doc, None)
 		doc.save(ignore_permissions=True)
-		frappe.db.commit()
-		return token.as_authorization_header()
+		return {"token": token.as_authorization_header()}
 
-	def generate_qr(self, pin_code: str | None = None) -> dict[str, str]:
+	def generate_qr(self, pin_code: str | None = None) -> QRGenerateResponse:
 		pin = self._require_pin(pin_code)
 		user = self._require_session_user()
 		doc = frappe.get_doc("User", user)
@@ -72,12 +73,11 @@ class TokenAuthService:
 
 		self._set_qr_blob(doc, encrypted_qr)
 		doc.save(ignore_permissions=True)
-		frappe.db.commit()
 		return {"encrypted_qr": encrypted_qr}
 
-	def login_qr(self, encrypted_qr: str | None = None, pin_code: str | None = None) -> str:
+	def login_qr(self, encrypted_qr: str | None = None, pin_code: str | None = None) -> AuthTokenResponse:
 		user, doc = self.verify_qr_user(encrypted_qr=encrypted_qr, pin_code=pin_code)
-		return self._ensure_basic_token_for_doc(doc).as_authorization_header()
+		return {"token": self._ensure_basic_token_for_doc(doc).as_authorization_header()}
 
 	def verify_qr_user(self, encrypted_qr: str | None = None, pin_code: str | None = None) -> str:
 		"""Return the enabled user represented by QR+PIN without creating a login response."""
@@ -151,7 +151,6 @@ class TokenAuthService:
 
 		if changed:
 			doc.save(ignore_permissions=True)
-			frappe.db.commit()
 
 		return BasicToken(api_key=doc.api_key, api_secret=api_secret)
 
