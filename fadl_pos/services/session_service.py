@@ -32,6 +32,16 @@ class SessionService(BaseService):
             as_dict=True
         )
 
+    def _get_profile_payment_methods(self, pos_profile):
+        """
+        Fetch payment methods for a specific POS Profile.
+        """
+        return frappe.db.get_all(
+            "POS Payment Method",
+            filters={"parent": pos_profile, "parenttype": "POS Profile"},
+            fields=["mode_of_payment", "default"]
+        )
+
     def _create_opening_voucher(self, pos_profile, company, balance_details):
         """
         rewrited native create_opening_voucher from point-of-sale.py
@@ -213,7 +223,8 @@ class SessionService(BaseService):
         
         return {
             "status": "success" if closing_entry.status in ["Submitted", "Queued"] else "failed",
-            "closing_entry": closing_entry.name,
+            "is_final": bool(closing_entry.status == "Submitted"),
             "entry_status": closing_entry.status,
+            "closing_entry": closing_entry.name,
             "error_message": closing_entry.error_message if closing_entry.status == "Failed" else None
         }
