@@ -1,0 +1,5 @@
+# Этот файл не даёт _source_warehouse попасть в git
+# Это справочная копия, не production код
+*
+!README.md
+!.gitignore
