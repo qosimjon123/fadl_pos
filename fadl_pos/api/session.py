@@ -2,13 +2,13 @@ import frappe
 from fadl_pos.services.session_service import SessionService
 
 @frappe.whitelist()
-def init():
+def get_list():
     """
     Check if the user has an open shift and return initialization data.
     Route: /api/method/fadl_pos.api.session.init
     """
     service = SessionService()
-    return service.get_init_data()
+    return service.get_list()
 
 @frappe.whitelist()
 def open_shift(pos_profile: str, company: str, balance_details: str):

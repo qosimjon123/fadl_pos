@@ -1,3 +1,5 @@
+from erpnext.accounts.doctype.payment_request.test_payment_request import payment_method
+from typing import TypedDict, List
 import frappe
 from frappe import _
 
@@ -9,33 +11,108 @@ from erpnext.selling.page.point_of_sale.point_of_sale import (
 )
 from erpnext.accounts.doctype.pos_closing_entry.pos_closing_entry import make_closing_entry_from_opening
 
+from fadl_pos.serializers.session import (
+    PosProfileNative,
+    SessionListResponseSerializer,
+    PosProfileResponseSerializer,
+    PaymentMethodSerializer
+)
+
 class SessionService(BaseService):
-    def get_init_data(self):
+
+    def _get_profiles(self, user):
+        """
+        rewrited native pos_profile_query from pos_profile.py
+        Returns list of dicts with name and company.
+        """
+        return frappe.db.sql(
+            """
+            SELECT pf.name, pf.company
+            FROM `tabPOS Profile` pf
+            INNER JOIN `tabPOS Profile User` pfu ON pfu.parent = pf.name
+            WHERE pfu.user = %(user)s AND pf.disabled = 0
+            """,
+            {"user": user},
+            as_dict=True
+        )
+
+    def _check_opening_entry(self, user):
+        """
+        rewrited native check_opening_entry from point-of-sale.py
+        """
+        open_vouchers = frappe.db.get_all(
+            "POS Opening Entry",
+            filters={"user": user, "pos_closing_entry": ["in", ["", None]], "docstatus": 1},
+            fields=["name", "company", "pos_profile", "period_start_date"],
+            order_by="period_start_date desc",
+            limit=1
+        )
+        return open_vouchers
+
+    def get_list(self) -> List[SessionListResponseSerializer]:
         """
         Check if there is an open shift for the user,
         and fetch POS profile data if an open shift exists.
         """
-        open_vouchers = check_opening_entry(self.user)
-        
-        data = {
-            "has_open_shift": False,
-            "opening_entry": None,
-            "pos_profile": None,
-            "company": None
-        }
+        profiles = self._get_profiles(self.user)
+        open_vouchers = self._check_opening_entry(self.user)
+        active_entry = open_vouchers[0] if open_vouchers else None
 
-        if open_vouchers:
-            opening_entry = open_vouchers[0]
-            data["has_open_shift"] = True
-            data["opening_entry"] = opening_entry
+        pos_profiles_response = []
+
+        for profile in profiles:
+            profile_name = profile.get("name")
+            company = profile.get("company")
             
-            # Fetch profile details for the active session
-            profile_data = get_pos_profile_data(opening_entry.pos_profile)
-            data["pos_profile_data"] = profile_data
-            data["pos_profile"] = opening_entry.pos_profile
-            data["company"] = opening_entry.company
-            
-        return data
+            # Determine session status
+            opening_entry_name = None
+            status = "Inactive"
+            if active_entry and active_entry.pos_profile == profile_name:
+                opening_entry_name = active_entry.name
+                status = "Active"
+
+            profile_dict = {
+                "name": profile_name,
+                "status": status,
+                "company": company,
+                "opening_entry": opening_entry_name,
+            }
+
+            # If the shift is inactive, we need to gather opening requirements
+            if status == "Inactive":
+                # Fetch payment methods for this profile
+                payment_docs = frappe.db.get_all(
+                    "POS Payment Method",
+                    filters={"parent": profile_name, "parenttype": "POS Profile"},
+                    fields=["mode_of_payment", "default"]
+                )
+                
+                payment_methods = []
+                for pm in payment_docs:
+                    mop_type = frappe.db.get_value("Mode of Payment", pm.mode_of_payment, "type")
+                    payment_methods.append({
+                        "name": pm.mode_of_payment,
+                        "default": pm.default,
+                        "type": mop_type,
+                        "required_ob": bool(mop_type == "Cash")
+                    })
+
+                profile_dict["checklists"] = [
+                    {"opening": []},
+                    {"closing": []}
+                ]
+                profile_dict["payment_methods"] = payment_methods
+
+            pos_profiles_response.append(profile_dict)
+
+        return [{
+            "pos_profiles": pos_profiles_response
+        }]
+
+
+
+
+
 
     def open_shift(self, pos_profile: str, company: str, balance_details: str | list | dict):
         """
