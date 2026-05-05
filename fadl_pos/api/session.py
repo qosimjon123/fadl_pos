@@ -17,6 +17,9 @@ def open_shift(pos_profile: str, company: str, balance_details: str):
     Create a new POS Opening Entry.
     Route: /api/method/fadl_pos.api.session.open_shift
     """
+    if not pos_profile or not company:
+        frappe.throw(_("POS Profile and Company are required to open a shift."))
+    
     service = SessionService()
     parsed_balance: List[BalanceDetailItem] = service._parse_json(balance_details)
     return service.open_shift(pos_profile, company, parsed_balance)
@@ -27,6 +30,9 @@ def close_shift(opening_entry_name: str, closing_data: str = None):
     Close the shift and create POS Closing Entry.
     Route: /api/method/fadl_pos.api.session.close_shift
     """
+    if not opening_entry_name or closing_data:
+        frappe.throw(_("Opening Entry Name and Closing Data are required to close the shift."))
+    
     service = SessionService()
     parsed_data: List[ClosingReconciliationItem] = service._parse_json(closing_data) if closing_data else None
     return service.close_shift(opening_entry_name, parsed_data)

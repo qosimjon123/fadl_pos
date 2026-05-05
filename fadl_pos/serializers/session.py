@@ -13,9 +13,11 @@ class ClosingReconciliationItem(TypedDict):
     mode_of_payment: str
     closing_amount: float
 
-class CloseShiftResponse(TypedDict):
+class CloseShiftResponse(TypedDict, total=False):
     status: str
     closing_entry: str
+    is_final: bool
+    message: str
 
 # --- API Response Serializers ---
 
