@@ -163,7 +163,24 @@ class SessionService(BaseService):
         # 1. Generate closing entry from native builder
         closing_entry = make_closing_entry_from_opening(opening_entry)
         
-        # 2. Update actual balances based on user input (closing_data)
+        # 2. Merge opening amounts from the opening entry
+        opening_amounts = {d.mode_of_payment: frappe.utils.flt(d.opening_amount) for d in opening_entry.balance_details}
+        existing_mops = []
+        for row in closing_entry.payment_reconciliation:
+            existing_mops.append(row.mode_of_payment)
+            if row.mode_of_payment in opening_amounts:
+                row.opening_amount = opening_amounts[row.mode_of_payment]
+                
+        # Append payment methods that were in the opening entry but had no transactions
+        for mop, opening_amt in opening_amounts.items():
+            if mop not in existing_mops:
+                closing_entry.append("payment_reconciliation", {
+                    "mode_of_payment": mop,
+                    "opening_amount": opening_amt,
+                    "expected_amount": 0
+                })
+        
+        # 3. Update actual balances based on user input (closing_data)
         if closing_data:
             # Map by mode_of_payment
             actual_map = {p.get("mode_of_payment"): frappe.utils.flt(p.get("closing_amount", 0)) for p in closing_data}
@@ -172,7 +189,7 @@ class SessionService(BaseService):
                 if row.mode_of_payment in actual_map:
                     row.closing_amount = actual_map[row.mode_of_payment]
                     
-        # 3. Save and submit
+        # 4. Save and submit
         closing_entry.insert(ignore_permissions=True)
         closing_entry.submit()
         
