@@ -30,8 +30,8 @@ def close_shift(opening_entry_name: str, closing_data: str = None):
     Close the shift and create POS Closing Entry.
     Route: /api/method/fadl_pos.api.session.close_shift
     """
-    if not opening_entry_name or closing_data:
-        frappe.throw(_("Opening Entry Name and Closing Data are required to close the shift."))
+    if not opening_entry_name:
+        frappe.throw(_("Opening Entry Name is required to close the shift."))
     
     service = SessionService()
     parsed_data: List[ClosingReconciliationItem] = service._parse_json(closing_data) if closing_data else None

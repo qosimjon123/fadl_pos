@@ -17,6 +17,8 @@ class CloseShiftResponse(TypedDict, total=False):
     status: str
     closing_entry: str
     is_final: bool
+    entry_status: str
+    error_message: Optional[str]
     message: str
 
 # --- API Response Serializers ---
@@ -39,8 +41,8 @@ class PosProfileResponseSerializer(TypedDict):
     status: str
     opening_entry: Optional[str]
     company: str
-    checklists: List[Checklists]
-    payment_methods: List[PaymentMethodSerializer]
+    checklists: Optional[List[Checklists]]
+    payment_methods: Optional[List[PaymentMethodSerializer]]
 
 class SessionListResponseSerializer(TypedDict):
     pos_profiles: List[PosProfileResponseSerializer]
