@@ -19,6 +19,12 @@ class InvoiceService(BaseService):
             return self.make_return(data)
         elif action == "void":
             return self.void(data)
+        elif action == "validate":
+            return self.validate_cart(data)
+        elif action == "check_sync":
+            return self.check_sync(data)
+        elif action == "cleanup":
+            return self.cleanup_drafts(data)
         else:
             frappe.throw(_("Invalid action: {0}").format(action))
 
@@ -112,3 +118,18 @@ class InvoiceService(BaseService):
             "name": name,
             "message": _("Invoice {0} voided").format(name)
         }
+
+    def validate_cart(self, data: dict):
+        from fadl_pos.services.validation_service import ValidationService
+        return ValidationService.validate_cart_items(data.get("items", []), data.get("warehouse"))
+
+    def check_sync(self, data: dict):
+        from fadl_pos.services.validation_service import ValidationService
+        exists = ValidationService.check_offline_sync(data.get("offline_id"))
+        return {"synced": exists}
+
+    def cleanup_drafts(self, data: dict):
+        from fadl_pos.services.validation_service import ValidationService
+        days = data.get("days", 7)
+        count = ValidationService.cleanup_old_drafts(days)
+        return {"status": "success", "cleaned_count": count}
