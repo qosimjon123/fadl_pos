@@ -10,6 +10,8 @@ class CustomerService(BaseService):
             return self.get_list(**kwargs)
         elif action == "details":
             return self.get_details(**kwargs)
+        elif action == "recent_transactions":
+            return self.get_recent_transactions(**kwargs)
         else:
             frappe.throw(_("Invalid action: {0}").format(action))
 
@@ -18,6 +20,8 @@ class CustomerService(BaseService):
             return self.create(data)
         elif action == "update":
             return self.update(data)
+        elif action == "set_info":
+            return self.set_info(data)
         else:
             frappe.throw(_("Invalid action: {0}").format(action))
 
@@ -84,3 +88,32 @@ class CustomerService(BaseService):
             "status": "success",
             "customer": doc.as_dict()
         }
+
+    def set_info(self, data: dict) -> CustomerResponseSerializer:
+        """
+        Native wrapper: Quickly update specific customer fields (email, mobile, loyalty).
+        """
+        from erpnext.selling.page.point_of_sale.point_of_sale import set_customer_info as native_set_info
+        
+        fieldname = data.get("fieldname")
+        customer = data.get("customer")
+        value = data.get("value", "")
+        
+        if not fieldname or not customer:
+            frappe.throw(_("Fieldname and Customer are required."))
+            
+        native_set_info(fieldname, customer, value)
+        
+        return {
+            "status": "success",
+            "message": _("Updated {0} for {1}").format(fieldname, customer)
+        }
+
+    def get_recent_transactions(self, customer: str) -> CustomerResponseSerializer:
+        """
+        Native wrapper: Get last 20 transactions for a customer.
+        """
+        from erpnext.selling.page.point_of_sale.point_of_sale import get_customer_recent_transactions
+        
+        transactions = get_customer_recent_transactions(customer)
+        return {"transactions": transactions}

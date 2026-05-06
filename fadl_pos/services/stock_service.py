@@ -22,6 +22,10 @@ class StockService(BaseService):
             return self.get_warehouses(**kwargs)
         elif action == "bundle":
             return self.get_bundle(**kwargs)
+        elif action == "auto_serial":
+            return self.auto_fetch_serial(**kwargs)
+        elif action == "reserved_serials":
+            return self.get_reserved_serials(**kwargs)
         else:
             frappe.throw(_("Invalid action: {0}").format(action))
 
@@ -97,3 +101,28 @@ class StockService(BaseService):
             availabilities.append(actual_qty / comp.qty)
             
         return {"bundle_availability": min(availabilities) if availabilities else 0}
+
+    def auto_fetch_serial(self, qty, item_code, warehouse, batch_nos=None):
+        """
+        Native wrapper: Auto-fetch available serial numbers for an item.
+        """
+        from erpnext.stock.doctype.serial_no.serial_no import auto_fetch_serial_number
+        
+        serials = auto_fetch_serial_number(
+            qty=cint(qty),
+            item_code=item_code,
+            warehouse=warehouse,
+            batch_nos=batch_nos,
+            for_doctype="POS Invoice"
+        )
+        return {"serial_nos": serials}
+
+    def get_reserved_serials(self, item_code, warehouse):
+        """
+        Native wrapper: Get serial numbers reserved in other open POS Invoices.
+        """
+        from erpnext.stock.doctype.serial_no.serial_no import get_pos_reserved_serial_nos
+        
+        filters = {"item_code": item_code, "warehouse": warehouse}
+        serials = get_pos_reserved_serial_nos(filters)
+        return {"reserved_serial_nos": serials}
