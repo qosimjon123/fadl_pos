@@ -18,10 +18,12 @@ class SessionService(BaseService):
 
     def _get_profiles(self, user):
         """
-        rewrited native pos_profile_query from pos_profile.py
-        Returns list of dicts with name and company.
+        Rewrited native pos_profile_query logic:
+        1. Profiles where user is explicitly listed.
+        2. Profiles where NO users are listed (accessible to everyone).
         """
-        return frappe.db.sql(
+        # Profiles assigned to user
+        user_profiles = frappe.db.sql(
             """
             SELECT pf.name, pf.company
             FROM `tabPOS Profile` pf
@@ -31,6 +33,32 @@ class SessionService(BaseService):
             {"user": user},
             as_dict=True
         )
+
+        # Profiles with NO users (everyone)
+        public_profiles = frappe.db.sql(
+            """
+            SELECT pf.name, pf.company
+            FROM `tabPOS Profile` pf
+            LEFT JOIN `tabPOS Profile User` pfu ON pfu.parent = pf.name
+            WHERE pfu.user IS NULL AND pf.disabled = 0
+            """,
+            as_dict=True
+        )
+        
+        return user_profiles + public_profiles
+
+    def _validate_applicable_user(self, pos_profile):
+        """
+        Strictly validate if the user is allowed to use this POS Profile.
+        If the 'applicable_for_users' table is NOT empty, the user MUST be in it.
+        """
+        profile = frappe.get_cached_doc("POS Profile", pos_profile)
+        if profile.applicable_for_users:
+            allowed_users = [d.user for d in profile.applicable_for_users]
+            if frappe.session.user not in allowed_users:
+                frappe.throw(_("User {0} is not allowed to use POS Profile {1}").format(
+                    frappe.session.user, pos_profile
+                ))
 
     def _get_profile_payment_methods(self, pos_profile):
         """
@@ -144,6 +172,9 @@ class SessionService(BaseService):
         Create a new POS Opening Entry (open shift).
         balance_details: list of dicts with 'mode_of_payment' and 'opening_amount'
         """
+        # 0. Validate if the user is allowed to use this POS Profile
+        self._validate_applicable_user(pos_profile)
+
         # 1. Prevent duplicate shifts for the same user
         if self._check_opening_entry(user=self.user):
             frappe.throw(_("You already have an open POS shift. Please close it before opening a new one."))
