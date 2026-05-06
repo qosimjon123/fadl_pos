@@ -152,6 +152,18 @@ class SessionService(BaseService):
         if self._check_opening_entry(pos_profile=pos_profile):
             frappe.throw(_("POS Profile {0} is already in use by another cashier.").format(frappe.bold(pos_profile)))
 
+        # 3. Validate Cash Opening Balance based on POS Profile
+        profile_mops = self._get_profile_payment_methods(pos_profile)
+        provided_mops = {d.get("mode_of_payment"): d.get("opening_amount") for d in balance_details}
+        
+        for pm in profile_mops:
+            mop = pm.mode_of_payment
+            mop_type = frappe.db.get_value("Mode of Payment", mop, "type")
+            if mop_type == "Cash":
+                amount = provided_mops.get(mop)
+                if amount is None or amount == "":
+                    frappe.throw(_("Please enter an opening balance for Cash ({0}) as required by POS Profile").format(mop))
+
         self._create_opening_voucher(pos_profile, company, balance_details)
         
         # Return the simplified active profile list, ensuring consistency
@@ -179,7 +191,10 @@ class SessionService(BaseService):
         # 2. Merge and Fix Reconciliation logic
         # We need to map opening amounts and user input actual amounts
         opening_amounts = {d.mode_of_payment: frappe.utils.flt(d.opening_amount) for d in opening_entry.balance_details}
-        actual_map = {p.get("mode_of_payment"): frappe.utils.flt(p.get("closing_amount", 0)) for p in (closing_data or [])}
+        
+        # Create a map of user-provided closing amounts. 
+        # We store them as they are (allowing None to detect missing input for Cash)
+        actual_map = {p.get("mode_of_payment"): p.get("closing_amount") for p in (closing_data or [])}
         
         existing_mops = []
         for row in closing_entry.payment_reconciliation:
@@ -194,11 +209,15 @@ class SessionService(BaseService):
             row.expected_amount += opening_amt
             
             # Default closing_amount to expected_amount (Desk behavior: assume no discrepancy if not specified)
-            row.closing_amount = row.expected_amount
+            # EXCEPT for Cash - we want an explicit count for ALL cash MOPs in profile
+            mop_type = frappe.db.get_value("Mode of Payment", row.mode_of_payment, "type")
             
-            # Apply user override if exists
-            if row.mode_of_payment in actual_map:
-                row.closing_amount = actual_map[row.mode_of_payment]
+            if row.mode_of_payment in actual_map and actual_map[row.mode_of_payment] is not None:
+                row.closing_amount = frappe.utils.flt(actual_map[row.mode_of_payment])
+            elif mop_type == "Cash":
+                frappe.throw(_("Please enter the actual closing amount for Cash ({0})").format(row.mode_of_payment))
+            else:
+                row.closing_amount = row.expected_amount
             
             # Calculate difference (Calculated in JS in native Desk)
             row.difference = frappe.utils.flt(row.closing_amount) - frappe.utils.flt(row.expected_amount)
@@ -206,12 +225,21 @@ class SessionService(BaseService):
         # Append payment methods that were in the opening entry but had NO transactions
         for mop, opening_amt in opening_amounts.items():
             if mop not in existing_mops:
+                mop_type = frappe.db.get_value("Mode of Payment", mop, "type")
+                
+                # Default logic for closing amount
+                closing_amt = opening_amt
+                if mop in actual_map and actual_map[mop] is not None:
+                    closing_amt = frappe.utils.flt(actual_map[mop])
+                elif mop_type == "Cash":
+                     frappe.throw(_("Please enter the actual closing amount for Cash ({0})").format(mop))
+
                 closing_entry.append("payment_reconciliation", {
                     "mode_of_payment": mop,
                     "opening_amount": opening_amt,
                     "expected_amount": opening_amt,
-                    "closing_amount": actual_map.get(mop, opening_amt), # Default to opening if no sales and no input
-                    "difference": actual_map.get(mop, opening_amt) - opening_amt
+                    "closing_amount": closing_amt,
+                    "difference": closing_amt - opening_amt
                 })
         
         # 3. Save and submit
