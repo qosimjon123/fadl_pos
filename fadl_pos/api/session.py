@@ -1,4 +1,5 @@
 import frappe
+from frappe import _
 from typing import List
 from fadl_pos.services.session_service import SessionService
 from fadl_pos.serializers.session import BalanceDetailItem, ClosingReconciliationItem

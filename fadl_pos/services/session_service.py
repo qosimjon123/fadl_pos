@@ -138,12 +138,12 @@ class SessionService(BaseService):
             filters={
                 "pos_closing_entry": ["in", ["", None]],
                 "docstatus": 1,
-                "or": [
-                    {"user": self.user},
-                    {"pos_profile": pos_profile}
-                ]
             },
-            fields=["user", "pos_profile"]
+            or_filters=[
+                ["user", "=", self.user],
+                ["pos_profile", "=", pos_profile],
+            ],
+            fields=["user", "pos_profile"],
         )
         for entry in open_entries:
             if entry.user == self.user:
