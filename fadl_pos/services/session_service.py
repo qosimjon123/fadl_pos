@@ -1,4 +1,3 @@
-from erpnext.accounts.doctype.payment_request.test_payment_request import payment_method
 from typing import TypedDict, List
 import frappe
 from frappe import _
@@ -11,7 +10,9 @@ from fadl_pos.serializers.session import (
     SessionListResponseSerializer,
     ClosingReconciliationItem,
     CloseShiftResponse,
-    BalanceDetailItem
+    BalanceDetailItem,
+    InternalPaymentMethod,
+    Checklists
 )
 
 class SessionService(BaseService):
@@ -57,7 +58,7 @@ class SessionService(BaseService):
                 self.user, pos_profile
             ))
 
-    def _fetch_payment_methods(self, profile_names: List[str]):
+    def _fetch_payment_methods(self, profile_names: List[str]) -> List[InternalPaymentMethod]:
         """
         Fetch payment methods for multiple POS Profiles including their type in ONE query.
         """
@@ -79,7 +80,7 @@ class SessionService(BaseService):
             as_dict=True
         )
 
-    def _fetch_checklists(self, profile_names: List[str]):
+    def _fetch_checklists(self, profile_names: List[str]) -> dict[str, Checklists]:
         """
         Fetch all checklists for multiple POS Profiles in ONE query, preserving order via idx.
         """
@@ -97,12 +98,14 @@ class SessionService(BaseService):
             order_by="idx asc"
         )
 
-        checklists_by_profile = {}
+        checklists_by_profile: dict[str, Checklists] = {}
         for item in items:
             p_name = item.parent
             section = "opening" if item.parentfield == "custom_opening_checklist" else "closing"
             
-            checklists_by_profile.setdefault(p_name, {"opening": [], "closing": []})
+            if p_name not in checklists_by_profile:
+                checklists_by_profile[p_name] = {"opening": [], "closing": []}
+            
             checklists_by_profile[p_name][section].append({"title": item.title})
             
         return checklists_by_profile
@@ -148,18 +151,18 @@ class SessionService(BaseService):
             if entry.pos_profile == pos_profile:
                 frappe.throw(_("POS Profile {0} is already in use by another cashier.").format(frappe.bold(pos_profile)))
 
-    def _get_profile_config(self, pos_profile: str):
+    def _get_profile_config(self, pos_profile: str) -> dict:
         """Fetch all necessary profile config in minimal queries."""
         return {
             "payment_methods": self._fetch_payment_methods([pos_profile]),
             "allowed_users": frappe.db.get_all("POS Profile User", {"parent": pos_profile}, pluck="user")
         }
 
-    def _normalize_opening_balances(self, profile_mops: List[dict], balance_details: List[BalanceDetailItem]):
+    def _normalize_opening_balances(self, profile_mops: List[InternalPaymentMethod], balance_details: List[BalanceDetailItem]) -> List[dict]:
         """Validates Cash requirements and filters out non-Cash methods."""
         provided_mops = {d.get("mode_of_payment"): d.get("opening_amount") for d in balance_details}
         
-        normalized_details = []
+        normalized_details: List[dict] = []
         for pm in profile_mops:
             if pm.get("mop_type") == "Cash":
                 mop = pm.get("mode_of_payment")

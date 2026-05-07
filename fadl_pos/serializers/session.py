@@ -21,14 +21,22 @@ class CloseShiftResponse(TypedDict, total=False):
     error_message: Optional[str]
     message: str
 
+# --- Internal Types (used within services) ---
+
+class InternalPaymentMethod(TypedDict):
+    pos_profile: str
+    mode_of_payment: str
+    default: int
+    mop_type: str
+
 # --- API Response Serializers ---
 
-class ChecklistSection(TypedDict):
-    opening: List[dict]
+class ChecklistItem(TypedDict):
+    title: str
 
-class Checklists(TypedDict, total=False):
-    opening: List[dict]
-    closing: List[dict]
+class Checklists(TypedDict):
+    opening: List[ChecklistItem]
+    closing: List[ChecklistItem]
 
 class PaymentMethodSerializer(TypedDict):
     name: str
