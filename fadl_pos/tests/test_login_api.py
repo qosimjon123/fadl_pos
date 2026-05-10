@@ -15,6 +15,7 @@ from frappe.utils.password import update_password
 
 from fadl_pos.api.login.auth_service import TokenAuthService
 from fadl_pos.api.login.login_endpoints import clear_sessions, generate_qr, login, login_qr
+from fadl_pos.serializers.login import AuthTokenResponse
 
 
 class TestLoginWithQrAPI(IntegrationTestCase):
@@ -69,8 +70,15 @@ class TestLoginWithQrAPI(IntegrationTestCase):
 	@staticmethod
 	def _post_request(path: str) -> None:
 		set_request(method="POST", path=path, environ_base={"REMOTE_ADDR": "127.0.0.1"})
+		frappe.local.request_ip = "127.0.0.1"
 		frappe.local.cookie_manager = CookieManager()
 		frappe.local.login_manager = LoginManager()
+
+	@staticmethod
+	def _basic_header(payload: str | AuthTokenResponse) -> str:
+		if isinstance(payload, dict):
+			return payload["token"]
+		return payload
 
 	@staticmethod
 	def _decode_basic_token(value: str) -> tuple[str, str]:
@@ -79,8 +87,8 @@ class TestLoginWithQrAPI(IntegrationTestCase):
 		api_key, api_secret = decoded.split(":", 1)
 		return api_key, api_secret
 
-	def _assert_basic_token_valid_for_user(self, value: str, user: str) -> tuple[str, str]:
-		api_key, api_secret = self._decode_basic_token(value)
+	def _assert_basic_token_valid_for_user(self, value: str | AuthTokenResponse, user: str) -> tuple[str, str]:
+		api_key, api_secret = self._decode_basic_token(self._basic_header(value))
 		self.assertEqual(frappe.db.get_value("User", user, "api_key"), api_key)
 		validate_api_key_secret(api_key, api_secret)
 		self.assertEqual(frappe.session.user, user)
@@ -171,12 +179,12 @@ class TestLoginWithQrAPI(IntegrationTestCase):
 		frappe.set_user("Guest")
 		self._post_request("/api/v2/method/fadl_pos.api.login.login_endpoints.login")
 		old_token = login(self.TEST_EMAIL, self.TEST_PASSWORD)
-		old_api_key, old_api_secret = self._decode_basic_token(old_token)
+		old_api_key, old_api_secret = self._decode_basic_token(self._basic_header(old_token))
 
 		frappe.set_user(self.TEST_EMAIL)
 		generate_qr("123456")
 		new_token = clear_sessions()
-		new_api_key, new_api_secret = self._decode_basic_token(new_token)
+		new_api_key, new_api_secret = self._decode_basic_token(self._basic_header(new_token))
 
 		self.assertEqual(old_api_key, new_api_key)
 		self.assertNotEqual(old_api_secret, new_api_secret)

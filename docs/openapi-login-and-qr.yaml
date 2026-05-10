@@ -1,0 +1,292 @@
+# Fadl POS — контракт API для формы логина и QR-входа (OpenAPI 3.1)
+# Использование: Swagger UI / Redoc / Postman Import → вставьте базовый URL вашего сайта Frappe.
+#
+# Все пути ниже — классический RPC: POST {baseUrl}/api/method/<dotted.path>
+# (тот же контракт, что вызывает Frappe JS SDK / клиент через api/method, НЕ префикс api/v2).
+# Тело: JSON с полями на верхнем уровне или application/x-www-form-urlencoded — как ожидает ваш SDK.
+
+openapi: 3.1.0
+info:
+  title: Fadl POS — Login & QR Token API
+  description: |
+    **Назначение:** получить строку авторизации для последующих вызовов Fadl POS API (формат как у HTTP заголовка `Authorization`).
+
+    **Клиент Frappe SDK:** вызывайте whitelisted-методы через **`/api/method/...`** (как делает SDK по умолчанию).
+    Префикс **`/api/v2/method`** — другой контракт/версия HTTP API; для этой спецификации он **не нужен**.
+
+    **Важно для фронта:**
+    - Успешный ответ — JSON-объект с полем `token` (строка). Его нужно передавать в заголовке:
+      `Authorization: <значение token целиком>`  
+      Обычно это уже строка вида `Basic <base64>`.
+    - Эндпоинты с `allow_guest` не требуют cookie-сессии Frappe; остальные — требуют залогиненного пользователя (Sid / session).
+    - Поля запроса по сути **строки**. Если прислать не строку (например число без кавычек в неверном контексте), бэкенд вернёт ошибку валидации по полю.
+    - Лимит: гостевые `login` и `login_qr` — **30 запросов за 60 секунд на IP** (см. заголовки `X-RateLimit-*` при 429).
+
+    Внутреннее содержимое QR и секреты в ответах **не раскрываются** — только `encrypted_qr` и `token`.
+  version: 1.0.0
+
+servers:
+  - url: https://{site}
+    variables:
+      site:
+        default: your-site.localhost
+        description: Хост Frappe (без пути к bench)
+
+tags:
+  - name: Password login
+    description: Логин по паролю (гостевой POST).
+  - name: QR login
+    description: Логин по содержимого QR и 6-значному PIN (гостевой POST).
+  - name: QR setup
+    description: Генерация QR для текущего пользователя (нужна сессия).
+
+paths:
+  /api/method/fadl_pos.api.login.login_endpoints.login:
+    post:
+      tags: [Password login]
+      summary: Логин по email/логину и паролю
+      description: |
+        Возвращает `token` для заголовка `Authorization`.  
+        Имена полей **usr** и **pwd** — исторически как в Frappe (не `email`/`password`).
+      operationId: fadlPosLoginPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              default:
+                summary: Обычный JSON
+                value:
+                  usr: cashier@example.com
+                  pwd: 'secret-password'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Успех
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageWrapperAuthToken'
+              examples:
+                ok:
+                  value:
+                    message:
+                      token: 'Basic ZXhhbXBsZV9rZXk6ZXhhbXBsZV9zZWNyZXQ='
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '417':
+          $ref: '#/components/responses/ExpectationFailed'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/method/fadl_pos.api.login.login_endpoints.login_qr:
+    post:
+      tags: [QR login]
+      summary: Логин по зашифрованному blob из QR и PIN
+      description: |
+        - **encrypted_qr** — строка из поля `encrypted_qr` (сгенерирована `generate_qr`), обычно кладётся в QR как текст/base64url.
+        - **pin_code** — ровно **6 цифр** (regex `^\d{6}$`).
+      operationId: fadlPosLoginQr
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QRLoginRequest'
+            examples:
+              default:
+                value:
+                  encrypted_qr: 'RlAxlxEkP3gw9VU...'
+                  pin_code: '424242'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/QRLoginRequest'
+      responses:
+        '200':
+          description: Успех
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageWrapperAuthToken'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/method/fadl_pos.api.login.login_endpoints.generate_qr:
+    post:
+      tags: [QR setup]
+      summary: Сгенерировать новый QR (blob) для текущего пользователя
+      description: |
+        Требуется **активная сессия** Frappe (пользователь уже вошёл в Desk / получил sid и т.д.).
+        Старый QR на сервере инвалидируется при следующей успешной генерации (у пользователя одно актуальное зашифрованное значение в профиле).
+      operationId: fadlPosGenerateQr
+      security:
+        - SessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QRGenerateRequest'
+            examples:
+              default:
+                value:
+                  pin_code: '424242'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/QRGenerateRequest'
+      responses:
+        '200':
+          description: Успех — положить `encrypted_qr` в QR-код как полезную нагрузку для `login_qr`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageWrapperQRGenerate'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/method/fadl_pos.api.login.login_endpoints.clear_sessions:
+    post:
+      tags: [QR setup]
+      summary: Сбросить секрет API и очистить привязанный QR
+      description: Требуется сессия. После вызова старые `token` и старый QR перестают быть валидными.
+      operationId: fadlPosClearSessions
+      security:
+        - SessionCookie: []
+      responses:
+        '200':
+          description: Успех — новый `token`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageWrapperAuthToken'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: sid
+      description: Стандартная cookie сессии Frappe (зависит от настроек сайта).
+
+  schemas:
+    LoginRequest:
+      type: object
+      description: Тело для логина по паролю
+      properties:
+        usr:
+          type: string
+          description: Email или имя пользователя Frappe
+        pwd:
+          type: string
+          description: Пароль
+          format: password
+      required: [usr, pwd]
+
+    QRLoginRequest:
+      type: object
+      properties:
+        encrypted_qr:
+          type: string
+          description: Зашифрованный blob (url-safe base64 без padding, как отдаёт API)
+        pin_code:
+          type: string
+          pattern: '^\\d{6}$'
+          description: 6 цифр
+      required: [encrypted_qr, pin_code]
+
+    QRGenerateRequest:
+      type: object
+      properties:
+        pin_code:
+          type: string
+          pattern: '^\\d{6}$'
+      required: [pin_code]
+
+    AuthTokenResponse:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: |
+            Готовое значение для заголовка Authorization, например `Basic <base64(api_key:api_secret)>`.
+          example: 'Basic ZXhhbXBsZV9rZXk6ZXhhbXBsZV9zZWNyZXQ='
+
+    QRGenerateResponse:
+      type: object
+      required: [encrypted_qr]
+      properties:
+        encrypted_qr:
+          type: string
+
+    MessageWrapperAuthToken:
+      type: object
+      description: |
+        Frappe оборачивает результат whitelisted-метода в объект ответа.
+        Реальная форма может отличаться по версии; для интеграции ориентируйтесь на поле `message`,
+        где лежит JSON, совпадающий с AuthTokenResponse (часто двойная сериализация строки — см. ответ в Network).
+      properties:
+        message:
+          oneOf:
+            - $ref: '#/components/schemas/AuthTokenResponse'
+            - type: string
+              description: Иногда message — JSON-строка; распарсите при необходимости
+
+    MessageWrapperQRGenerate:
+      type: object
+      properties:
+        message:
+          oneOf:
+            - $ref: '#/components/schemas/QRGenerateResponse'
+            - type: string
+
+    FrappeErrorBody:
+      type: object
+      description: Типичное тело ошибки Frappe (упрощённо)
+      properties:
+        _server_messages:
+          type: string
+        exc_type:
+          type: string
+          example: ValidationError
+        exception:
+          type: string
+
+  responses:
+    Unauthorized:
+      description: Неверные учётные данные или требуется вход (AuthenticationError / сессия)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/FrappeErrorBody'
+    ExpectationFailed:
+      description: |
+        В Frappe часто используется HTTP 417 для отображаемых ошибок приложения (включая часть auth).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/FrappeErrorBody'
+    TooManyRequests:
+      description: Превышен rate limit (гостевые login / login_qr)
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/FrappeErrorBody'

@@ -1,8 +1,6 @@
 ---
-description: Use OpenAEC Frappe skills and local Fadl POS conventions for this workspace
 alwaysApply: true
 ---
-
 # Fadl POS Frappe Guidance
 
 When a task touches `frappe-bench/apps/fadl_pos/**`, Frappe, ERPNext, bench, DocTypes, hooks, whitelisted APIs, client scripts, migrations, fixtures, permissions, database code, QR/POS login, or deployment, use the imported OpenAEC Frappe skills in `.cursor/skills/`.
