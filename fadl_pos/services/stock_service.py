@@ -1,7 +1,6 @@
 import frappe
 from frappe import _
-from frappe.utils import flt
-
+from frappe.utils import flt, cint
 from fadl_pos.services._base import BaseService
 from fadl_pos.serializers.stock import StockResponseSerializer
 
@@ -126,3 +125,74 @@ class StockService(BaseService):
         filters = {"item_code": item_code, "warehouse": warehouse}
         serials = get_pos_reserved_serial_nos(filters)
         return {"reserved_serial_nos": serials}
+
+
+    def update_warehouse(self, pos_profile: str, warehouse: str):
+        """
+        Update the warehouse for the POS Profile.
+        """
+
+        # Check if user has access to this POS Profile
+        has_access = frappe.db.exists(
+            "POS Profile User",
+            {"parent": pos_profile, "user": frappe.session.user}
+        )
+
+        if not has_access and not frappe.has_permission("POS Profile", "write"):
+            return {
+                "status": False,
+                "message": _("You don't have permission to update this POS Profile")
+            }
+
+        # Get POS Profile to check company
+        profile_doc = frappe.get_doc("POS Profile", pos_profile)
+        # Validate warehouse exists and is active
+        warehouse_doc = frappe.get_doc("Warehouse", warehouse)
+        if warehouse_doc.disabled and not warehouse_doc.is_group_warehouse:
+            frappe.throw(_("Warehouse {0} is disabled").format(warehouse))
+
+        # Validate warehouse belongs to same company
+        if warehouse_doc.company != profile_doc.company:
+            return {
+                "status": False,
+                "message": _(
+                    "Warehouse {0} belongs to {1}, but POS Profile belongs to {2}"
+                ).format(warehouse, warehouse_doc.company, profile_doc.company)
+            }
+
+        # Update the POS Profile
+        profile_doc.warehouse = warehouse
+        profile_doc.save()
+
+        return {
+            "status": True,
+            "message": _("Warehouse updated successfully"),
+            "warehouse": warehouse
+        }
+
+
+    def get_warehouses(self, pos_profile: str) -> list:
+        """
+        Get the warehouses for the POS Profile.
+        """
+        if not pos_profile:
+            frappe.throw(_("POS Profile is required to get warehouses."))
+
+        # Get the company from POS Profile
+        company = frappe.db.get_value("POS Profile", pos_profile, "company")
+        if not company:
+            return []
+        # Get all active warehouses for the company
+        warehouses = frappe.get_list(
+            "Warehouse",
+            filters={
+                "company": company,
+                "disabled": 0,
+                "is_group": 0
+            },
+            fields=["name", "warehouse_name"],
+            order_by="warehouse_name",
+            limit_page_length=0
+        )
+        # Return warehouses with human-readable names
+        return warehouses
