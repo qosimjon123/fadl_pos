@@ -98,10 +98,9 @@ class TokenAuthService:
 
 		payload = self._parse_qr_payload(raw_payload)
 		api_key = payload["api_key"]
-		qr_token = payload["qr_token"]
 
 		user = frappe.db.get_value("User", {"api_key": api_key, "enabled": 1}, "name")
-		if not user or user in frappe.STANDARD_USERS:
+		if not user or user in frappe.STANDARD_USERS :
 			_auth_error("Invalid PIN or encrypted QR payload")
 
 		doc = frappe.get_doc("User", user)

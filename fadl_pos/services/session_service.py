@@ -1,6 +1,8 @@
-from typing import TypedDict, List
+from typing import List
+
 import frappe
 from frappe import _
+from frappe.utils.data import strip_html
 
 from fadl_pos.services._base import BaseService
 
@@ -15,7 +17,95 @@ from fadl_pos.serializers.session import (
     Checklists
 )
 
+COMMENT_MAX_LEN = 4000
+
+
 class SessionService(BaseService):
+
+    @staticmethod
+    def _add_timeline_comment(doc, text: str | None) -> None:
+        """Append a Comment row like Desk timeline (reference_doctype / reference_name)."""
+        if not text or not isinstance(text, str):
+            return
+        cleaned = strip_html(text.strip())
+        if not cleaned:
+            return
+        if len(cleaned) > COMMENT_MAX_LEN:
+            frappe.throw(
+                _("Comment must be at most {0} characters").format(COMMENT_MAX_LEN),
+                frappe.ValidationError,
+            )
+        doc.add_comment("Comment", cleaned)
+
+    @staticmethod
+    def _coerce_json_list(raw: object, field_label: str) -> list:
+        if isinstance(raw, str):
+            text = raw.strip()
+            if not text:
+                return []
+            try:
+                parsed = frappe.parse_json(text)
+            except Exception:
+                frappe.throw(_("{0} must be valid JSON").format(field_label), frappe.ValidationError)
+        else:
+            parsed = raw
+        if not isinstance(parsed, list):
+            frappe.throw(_("{0} must be a JSON array").format(field_label), frappe.ValidationError)
+        return parsed
+
+    def parse_balance_details_arg(self, raw: object) -> list[BalanceDetailItem]:
+        """RPC: balance_details as JSON string or list; returns typed rows for open_shift."""
+        data = self._coerce_json_list(raw, _("balance_details"))
+        out: list[BalanceDetailItem] = []
+        for i, row in enumerate(data):
+            if not isinstance(row, dict):
+                frappe.throw(
+                    _("balance_details[{0}] must be an object").format(i),
+                    frappe.ValidationError,
+                )
+            mop = row.get("mode_of_payment")
+            amt = row.get("opening_amount")
+            if not isinstance(mop, str) or not mop.strip():
+                frappe.throw(
+                    _("balance_details[{0}].mode_of_payment must be text").format(i),
+                    frappe.ValidationError,
+                )
+            out.append(
+                BalanceDetailItem(
+                    mode_of_payment=mop.strip(),
+                    opening_amount=frappe.utils.flt(amt),
+                )
+            )
+        return out
+
+    def parse_closing_data_arg(self, raw: object | None) -> list[ClosingReconciliationItem] | None:
+        """RPC: optional closing_data JSON string or list for close_shift."""
+        if raw is None:
+            return None
+        if isinstance(raw, str) and not raw.strip():
+            return None
+        data = self._coerce_json_list(raw, _("closing_data"))
+        out: list[ClosingReconciliationItem] = []
+        for i, row in enumerate(data):
+            if not isinstance(row, dict):
+                frappe.throw(
+                    _("closing_data[{0}] must be an object").format(i),
+                    frappe.ValidationError,
+                )
+            mop = row.get("mode_of_payment")
+            amt = row.get("closing_amount")
+            if not isinstance(mop, str) or not mop.strip():
+                frappe.throw(
+                    _("closing_data[{0}].mode_of_payment must be text").format(i),
+                    frappe.ValidationError,
+                )
+            out.append(
+                ClosingReconciliationItem(
+                    mode_of_payment=mop.strip(),
+                    closing_amount=frappe.utils.flt(amt),
+                )
+            )
+        return out
 
     def _get_profiles(self, user):
         """
@@ -110,7 +200,9 @@ class SessionService(BaseService):
             
         return checklists_by_profile
 
-    def _create_opening_voucher(self, pos_profile, company, balance_details):
+    def _create_opening_voucher(
+        self, pos_profile, company, balance_details, comment: str | None = None
+    ):
         """
         rewrited native create_opening_voucher from point-of-sale.py
         """
@@ -126,6 +218,9 @@ class SessionService(BaseService):
         )
         new_pos_opening.set("balance_details", balance_details)
         new_pos_opening.submit()
+
+        if comment:
+            self._add_timeline_comment(new_pos_opening, comment)
 
         return new_pos_opening.as_dict()
         
@@ -244,17 +339,35 @@ class SessionService(BaseService):
     def get_list(self) -> List[SessionListResponseSerializer]:
         """
         Check for open shifts and fetch POS profile data efficiently.
+        If the user already has an open shift, returns that profile immediately (no payment_methods / checklists queries).
+        Otherwise all assigned profiles are returned with Close status and opening hints.
         """
+        # 1. Check for open shift immediately (no payment_methods / checklists queries)
+        open_shift = self._check_opening_entry(self.user)
+        active_entry = open_shift[0] if open_shift else None
+
+        if active_entry:
+            return [
+                {
+                    "pos_profiles": [
+                        {
+                            "name": active_entry.pos_profile,
+                            "status": "Open",
+                            "company": active_entry.company,
+                            "opening_entry": active_entry.name,
+                            "opening_entry_date": active_entry.period_start_date,
+                        }
+                    ]
+                }
+            ]
+
         profiles = self._get_profiles(self.user)
+
         profile_names = [p.get("name") for p in profiles]
-        
-        # 1. Fetch all open vouchers for user in one query
-        open_vouchers = self._check_opening_entry(self.user)
-        active_entry = open_vouchers[0] if open_vouchers else None
 
         # 2. Fetch all payment methods for all profiles in one batch query
         all_mops = self._fetch_payment_methods(profile_names)
-        
+
         mops_by_profile = {}
         for mop in all_mops:
             mops_by_profile.setdefault(mop.pos_profile, []).append(mop)
@@ -267,49 +380,42 @@ class SessionService(BaseService):
         for profile in profiles:
             p_name = profile.get("name")
             company = profile.get("company")
-            
-            # Determine session status
-            opening_entry_name = None
-            status = "Close"
-            if active_entry and active_entry.pos_profile == p_name:
-                opening_entry_name = active_entry.name
-                status = "Open"
 
             profile_dict = {
                 "name": p_name,
-                "status": status,
+                "status": "Close",
                 "company": company,
-                "opening_entry": opening_entry_name,
+                "opening_entry": None,
             }
 
-            # Gather opening requirements for closed shifts
-            if status == "Close":
-                profile_mops = mops_by_profile.get(p_name, [])
-                
-                payment_methods = []
-                for pm in profile_mops:
-                    payment_methods.append({
-                        "name": pm.mode_of_payment,
-                        "default": pm.default,
-                        "type": pm.mop_type,
-                        "required_ob": bool(pm.mop_type == "Cash")
-                    })
+            profile_mops = mops_by_profile.get(p_name, [])
 
-                profile_dict["checklists"] = [
-                    checklists_by_profile.get(p_name, {"opening": [], "closing": []})
-                ]
-                profile_dict["payment_methods"] = payment_methods
+            payment_methods = []
+            for pm in profile_mops:
+                payment_methods.append({
+                    "name": pm.mode_of_payment,
+                    "default": pm.default,
+                    "type": pm.mop_type,
+                    "required_ob": bool(pm.mop_type == "Cash")
+                })
+
+            profile_dict["checklists"] = [
+                checklists_by_profile.get(p_name, {"opening": [], "closing": []})
+            ]
+            profile_dict["payment_methods"] = payment_methods
 
             pos_profiles_response.append(profile_dict)
 
         return [{"pos_profiles": pos_profiles_response}]
 
 
-
-
-
-
-    def open_shift(self, pos_profile: str, company: str, balance_details: List[BalanceDetailItem]) -> List[SessionListResponseSerializer]:
+    def open_shift(
+        self,
+        pos_profile: str,
+        company: str,
+        balance_details: List[BalanceDetailItem],
+        comment: str | None = None,
+    ) -> List[SessionListResponseSerializer]:
         """
         Create a new POS Opening Entry (open shift).
         """
@@ -326,11 +432,16 @@ class SessionService(BaseService):
         normalized_details = self._normalize_opening_balances(config["payment_methods"], balance_details)
 
         # 5. Create Opening Voucher
-        self._create_opening_voucher(pos_profile, company, normalized_details)
+        self._create_opening_voucher(pos_profile, company, normalized_details, comment=comment)
         
         return self.get_list()
 
-    def close_shift(self, opening_entry_name: str, closing_data: List[ClosingReconciliationItem] = None) -> CloseShiftResponse:
+    def close_shift(
+        self,
+        opening_entry_name: str,
+        closing_data: List[ClosingReconciliationItem] = None,
+        comment: str | None = None,
+    ) -> CloseShiftResponse:
         """
         Create and submit a POS Closing Entry from an opening entry.
         """
@@ -354,7 +465,10 @@ class SessionService(BaseService):
         
         # Reload to capture status change
         closing_entry.load_from_db()
-        
+
+        if comment:
+            self._add_timeline_comment(closing_entry, comment)
+
         return {
             "status": "success" if closing_entry.status in ["Submitted", "Queued"] else "failed",
             "is_final": bool(closing_entry.status == "Submitted"),
@@ -362,3 +476,4 @@ class SessionService(BaseService):
             "closing_entry": closing_entry.name,
             "error_message": closing_entry.error_message if closing_entry.status == "Failed" else None
         }
+

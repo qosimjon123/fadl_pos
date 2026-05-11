@@ -62,7 +62,7 @@ class StockService(BaseService):
         
         return {"stocks": final_results}
 
-    def get_warehouses(self, item_code, company=None):
+    def get_item_by_warehouses(self, item_code, company=None):
         """
         POS Next Exclusive: Get availability across all warehouses for a company.
         """
