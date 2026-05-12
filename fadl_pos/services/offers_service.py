@@ -75,5 +75,5 @@ class OffersService(BaseService):
             doc.coupon_code = coupon_code
             
         # doc.save() naturally triggers apply_pricing_rule
-        doc.save(ignore_permissions=True)
+        doc.save()
         return {"status": "success", "invoice": doc.as_dict()}

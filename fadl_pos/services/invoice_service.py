@@ -1,6 +1,5 @@
 import frappe
 from frappe import _
-from frappe.utils import flt
 
 from fadl_pos.services._base import BaseService
 from fadl_pos.serializers.invoice import InvoiceResponseSerializer
@@ -21,10 +20,6 @@ class InvoiceService(BaseService):
             return self.void(data)
         elif action == "validate":
             return self.validate_cart(data)
-        elif action == "check_sync":
-            return self.check_sync(data)
-        elif action == "cleanup":
-            return self.cleanup_drafts(data)
         else:
             frappe.throw(_("Invalid action: {0}").format(action))
 
@@ -40,8 +35,11 @@ class InvoiceService(BaseService):
         else:
             data["doctype"] = "POS Invoice"
             doc = frappe.get_doc(data)
-            
-        doc.save(ignore_permissions=True)
+
+        if hasattr(doc, "set_missing_values"):
+            doc.set_missing_values()
+
+        doc.save()
         
         return {
             "status": "success",
@@ -57,17 +55,6 @@ class InvoiceService(BaseService):
         save_res = self.save(data)
         doc = frappe.get_doc("POS Invoice", save_res["name"])
         
-        # Validation before submit
-        if not doc.payments:
-            frappe.throw(_("At least one payment method is required."))
-            
-        total_paid = sum(flt(p.amount) for p in doc.payments)
-        if total_paid < doc.grand_total and not doc.is_return:
-            # Check if partial payment is allowed in POS Profile
-            allow_partial = frappe.db.get_value("POS Profile", doc.pos_profile, "allow_partial_payment")
-            if not allow_partial:
-                frappe.throw(_("Full payment is required for this POS Profile."))
-
         doc.submit()
         
         return {
@@ -93,7 +80,10 @@ class InvoiceService(BaseService):
             # Logic to filter items for partial return if needed
             pass
             
-        return_doc.insert(ignore_permissions=True)
+        if hasattr(return_doc, "set_missing_values"):
+            return_doc.set_missing_values()
+
+        return_doc.insert()
         
         return {
             "status": "success",
@@ -122,14 +112,3 @@ class InvoiceService(BaseService):
     def validate_cart(self, data: dict):
         from fadl_pos.services.validation_service import ValidationService
         return ValidationService.validate_cart_items(data.get("items", []), data.get("warehouse"))
-
-    def check_sync(self, data: dict):
-        from fadl_pos.services.validation_service import ValidationService
-        exists = ValidationService.check_offline_sync(data.get("offline_id"))
-        return {"synced": exists}
-
-    def cleanup_drafts(self, data: dict):
-        from fadl_pos.services.validation_service import ValidationService
-        days = data.get("days", 7)
-        count = ValidationService.cleanup_old_drafts(days)
-        return {"status": "success", "cleaned_count": count}

@@ -54,7 +54,7 @@ class CustomerService(BaseService):
 
     def create(self, data: dict) -> CustomerResponseSerializer:
         """
-        POS Next Exclusive: Optimized creation for POS.
+        Create a Customer from the POS API using ERPNext's Customer DocType.
         """
         # Ensure default group/territory if not provided
         if not data.get("customer_group"):
@@ -64,7 +64,7 @@ class CustomerService(BaseService):
             
         data["doctype"] = "Customer"
         doc = frappe.get_doc(data)
-        doc.insert(ignore_permissions=True)
+        doc.insert()
         
         return {
             "status": "success",
@@ -82,7 +82,7 @@ class CustomerService(BaseService):
             
         doc = frappe.get_doc("Customer", name)
         doc.update(data)
-        doc.save(ignore_permissions=True)
+        doc.save()
         
         return {
             "status": "success",

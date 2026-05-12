@@ -6,7 +6,7 @@ def get(action: str, **kwargs):
     """
     Unified catalog endpoint.
     Route: /api/method/fadl_pos.api.catalog.get
-    Params: action (items|search|barcode|groups|brands|variants|bulk|details), and other filters.
+    Params: action (items|search|barcode|groups|brands|variants|details), and other filters.
     """
     service = CatalogService()
     # Map incoming strings to appropriate types if needed (BaseService helpers do this too)

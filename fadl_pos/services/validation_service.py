@@ -1,12 +1,9 @@
 import frappe
 from frappe import _
-from frappe.utils import now_datetime, getdate, add_days
-
-from fadl_pos.services.invoice_service import InvoiceService
 
 class ValidationService:
     """
-    Backend validation logic to ensure PWA stability and data integrity.
+    Backend validation helpers that mirror native ERPNext POS checks.
     """
     
     @staticmethod
@@ -15,7 +12,7 @@ class ValidationService:
         Backend-side validation of prices and stock before submission.
         """
         errors = []
-        from erpnext.selling.page.point_of_sale.point_of_sale import get_stock_availability
+        from erpnext.accounts.doctype.pos_invoice.pos_invoice import get_stock_availability
         
         for item in items:
             item_code = item.get("item_code")
@@ -35,33 +32,3 @@ class ValidationService:
             "valid": len(errors) == 0,
             "errors": errors
         }
-
-    @staticmethod
-    def check_offline_sync(offline_id: str) -> bool:
-        """
-        Check if an invoice with this offline ID (e.g., a custom field or naming convention)
-        has already been synced to prevent duplicates.
-        """
-        # In fadl_pos, we should ideally have a custom field 'offline_id' on POS Invoice.
-        # For now, let's assume we use a naming pattern or a field if it exists.
-        return frappe.db.exists("POS Invoice", {"offline_id": offline_id})
-
-    @staticmethod
-    def cleanup_old_drafts(days: int = 7):
-        """
-        Delete POS Invoice drafts older than X days to keep the database clean.
-        """
-        cutoff_date = add_days(now_datetime(), -days)
-        drafts = frappe.get_all(
-            "POS Invoice",
-            filters={
-                "docstatus": 0,
-                "modified": ["<", cutoff_date]
-            },
-            fields=["name"]
-        )
-        
-        for d in drafts:
-            frappe.delete_doc("POS Invoice", d.name, ignore_permissions=True)
-            
-        return len(drafts)
