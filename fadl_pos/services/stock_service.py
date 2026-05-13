@@ -156,7 +156,8 @@ class StockService(BaseService):
         company = frappe.db.get_value("POS Profile", pos_profile, "company")
         if not company:
             return []
-        # Get all active warehouses for the company
+        # Get all active leaf warehouses for the company (exclude group warehouses).
+        # ``limit_page_length=0`` = no row cap (return every matching warehouse).
         warehouses = frappe.get_list(
             "Warehouse",
             filters={
@@ -168,5 +169,4 @@ class StockService(BaseService):
             order_by="warehouse_name",
             limit_page_length=0
         )
-        # Return warehouses with human-readable names
         return warehouses

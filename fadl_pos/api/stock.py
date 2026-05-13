@@ -6,6 +6,6 @@ def get(action: str, **kwargs):
     """
     Unified stock endpoint.
     Route: /api/method/fadl_pos.api.stock.get
-    Params: action (single|batch|warehouses|bundle), item_code, warehouse, etc.
+    Params: action (single|batch|warehouses|bundle|...), item_code, warehouse, pos_profile, etc.
     """
     return StockService().get(action, **kwargs)

@@ -4,6 +4,7 @@ import frappe
 from frappe import _
 
 from fadl_pos.services._base import BaseService
+from fadl_pos.services.stock_service import StockService
 from fadl_pos.serializers.catalog import CatalogResponseSerializer
 
 # Native Imports
@@ -276,8 +277,15 @@ class CatalogService(BaseService):
                     "restriction": "none | profile_whitelist",
                     "allowlist_names": null,
                     "tree": [...]
-                }
+                },
+                "warehouses": [
+                    {"name": "Stores - FT", "warehouse_name": "Stores - FT"},
+                    ...
+                ]
             }
+
+        ``warehouses`` — from :meth:`fadl_pos.services.stock_service.StockService.get_warehouses`
+        (active leaf warehouses of the profile company).
 
         ``opening_voucher.balance_details`` rows are enriched from POS Profile payments
         (``default``, ``allow_in_returns``) and ``Mode of Payment.type`` as ``mop_type``.
@@ -339,6 +347,9 @@ class CatalogService(BaseService):
 
         allow_names = self._pos_profile_item_group_allowlist(profile)
 
+        stock = StockService()
+        warehouses = stock.get_warehouses(pos_profile)
+
         pos_out = {
             "name": profile.name,
             "company": profile.company,
@@ -379,6 +390,7 @@ class CatalogService(BaseService):
                 "allowlist_names": sorted(allow_names) if allow_names is not None else None,
                 "tree": self._item_group_boot_tree(profile, allow_names),
             },
+            "warehouses": warehouses,
         }
 
     @staticmethod
@@ -540,3 +552,7 @@ AND NOT EXISTS (
             if children_out:
                 node["children"] = children_out
         return node
+
+
+    
+    
