@@ -3,6 +3,7 @@ from frappe import _
 from frappe.utils import today, getdate
 
 from fadl_pos.services._base import BaseService
+from fadl_pos.services.invoice_service import InvoiceService
 from fadl_pos.serializers.offers import OffersResponseSerializer
 
 class OffersService(BaseService):
@@ -68,12 +69,19 @@ class OffersService(BaseService):
 
     def apply_offer(self, invoice_name: str, coupon_code: str = None):
         """
-        Force re-calculation of pricing rules on an invoice.
+        Set coupon on draft POS Invoice or Sales Invoice and save (native pricing / totals).
         """
-        doc = frappe.get_doc("POS Invoice", invoice_name)
+        doc = InvoiceService._get_existing_invoice_doc(invoice_name)
+        if doc.docstatus != 0:
+            frappe.throw(
+                _("Only draft invoices can apply coupons."),
+                frappe.ValidationError,
+            )
         if coupon_code:
             doc.coupon_code = coupon_code
-            
-        # doc.save() naturally triggers apply_pricing_rule
+
+        if hasattr(doc, "set_missing_values"):
+            doc.set_missing_values()
+
         doc.save()
         return {"status": "success", "invoice": doc.as_dict()}

@@ -7,6 +7,7 @@ from frappe.utils.data import strip_html
 from fadl_pos.services._base import BaseService
 
 from erpnext.accounts.doctype.pos_closing_entry.pos_closing_entry import make_closing_entry_from_opening
+from erpnext.selling.page.point_of_sale.point_of_sale import create_opening_voucher as native_create_opening_voucher
 
 from fadl_pos.serializers.session import (
     SessionListResponseSerializer,

@@ -15,8 +15,18 @@ from fadl_pos.services.session_service import SessionService
 @frappe.whitelist(methods=["GET", "POST"])
 def get_list() -> list[SessionListResponseSerializer]:
 	"""
-	If the user has an open shift, returns only that profile (status Open). Otherwise all assigned profiles with Close and payment_methods/checklists.
-	Route: /api/method/fadl_pos.api.session.get_list
+	List POS profiles for the session user and detect an open shift.
+
+	**Route:** ``/api/method/fadl_pos.api.session.get_list`` (GET or POST)
+
+	**Input:** none (session user from Frappe).
+
+	**Output:** ``[{"pos_profiles": [...]}]``.
+
+	- If the user has an open **POS Opening Entry**, a single profile object with ``status: "Open"``,
+	  ``opening_entry``, ``opening_entry_date``.
+	- Otherwise each assigned profile includes ``status: "Close"``, ``payment_methods``, ``checklists``,
+	  ``company``. Closing uses native ``make_closing_entry_from_opening`` elsewhere.
 	"""
 	return SessionService().get_list()
 
@@ -29,10 +39,18 @@ def open_shift(
 	comment: str | None = None,
 ) -> list[SessionListResponseSerializer]:
 	"""
-	Create a new POS Opening Entry.
-	Only Cash balance_details rows from the POS Profile are used; non-Cash lines are ignored.
-	Optional **comment** is saved like Desk “Add Comment” on the submitted POS Opening Entry (`Comment` doctype).
-	Route: /api/method/fadl_pos.api.session.open_shift
+	Open a POS shift via native ``erpnext...point_of_sale.create_opening_voucher`` (wrapped server-side).
+
+	**Route:** ``/api/method/fadl_pos.api.session.open_shift`` (POST)
+
+	**Input:**
+
+	- ``pos_profile`` (str, required), ``company`` (str, required).
+	- ``balance_details`` (JSON string or list, required): rows ``{"mode_of_payment": str, "opening_amount": number}``.
+	  Cash modes must include an opening amount; others default to ``0``.
+	- ``comment`` (str, optional): timeline comment after submit.
+
+	**Output:** Same shape as :func:`get_list` after opening (typically one ``Open`` profile).
 	"""
 	pos_profile = optional_str_param("pos_profile", pos_profile)
 	company = optional_str_param("company", company)
@@ -52,10 +70,21 @@ def close_shift(
 	comment: str | None = None,
 ) -> CloseShiftResponse:
 	"""
-	Close the shift and create POS Closing Entry.
-	Cash MOPs need closing_amount in closing_data; non-Cash can be omitted (expected_amount is used).
-	Optional **comment** is saved like Desk on the submitted POS Closing Entry (`Comment` doctype).
-	Route: /api/method/fadl_pos.api.session.close_shift
+	Close a shift using native ``make_closing_entry_from_opening`` plus reconciliation merge.
+
+	**Route:** ``/api/method/fadl_pos.api.session.close_shift`` (POST)
+
+	**Input:**
+
+	- ``opening_entry_name`` (str, required): submitted POS Opening Entry to close.
+	- ``closing_data`` (optional JSON string or list): ``[{"mode_of_payment": str, "closing_amount": number}, ...]``.
+	  Cash modes require ``closing_amount``; others fall back to expected totals when omitted.
+	- ``comment`` (str, optional): timeline comment on the closing entry.
+
+	**Output:**
+
+	- ``{"status": "success"|"failed", "is_final": bool, "entry_status": str,
+	  "closing_entry": "<name>", "error_message": str|null}``.
 	"""
 	opening_entry_name = optional_str_param("opening_entry_name", opening_entry_name)
 	comment = optional_str_param("comment", comment)

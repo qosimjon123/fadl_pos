@@ -1,6 +1,6 @@
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate, today
+from frappe.utils import today
 
 from fadl_pos.services._base import BaseService
 from fadl_pos.serializers.payment import PaymentUpdateResponse, CouponSerializer
@@ -19,10 +19,24 @@ class PaymentService(BaseService):
 
     def update_invoice_payments(self, invoice_name: str, payments: list) -> PaymentUpdateResponse:
         """
-        Native wrapper: Update payments for an existing POS Invoice (Partial Payments).
+        Uses native :meth:`erpnext.accounts.doctype.pos_invoice.pos_invoice.POSInvoice.update_payments`
+        (partial payments / Payment Entry submission). Only **POS Invoice** implements this helper;
+        Sales Invoice POS flows use different payment handling.
         """
+        if frappe.db.exists("Sales Invoice", invoice_name):
+            frappe.throw(
+                _(
+                    "Partial payments via update_payments are only supported for POS Invoice, "
+                    "not Sales Invoice ({0}). Use Sales Invoice payment entries."
+                ).format(invoice_name),
+                frappe.ValidationError,
+            )
+        if not frappe.db.exists("POS Invoice", invoice_name):
+            frappe.throw(
+                _("POS Invoice {0} was not found.").format(invoice_name),
+                frappe.ValidationError,
+            )
         doc = frappe.get_doc("POS Invoice", invoice_name)
-        # Call native method from POS Invoice
         doc.update_payments(payments)
         
         return {

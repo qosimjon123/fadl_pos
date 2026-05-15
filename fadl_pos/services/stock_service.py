@@ -112,7 +112,9 @@ class StockService(BaseService):
             {"parent": pos_profile, "user": frappe.session.user}
         )
 
-        if not has_access and not frappe.has_permission("POS Profile", "write"):
+        if not has_access and not frappe.has_permission(
+            "POS Profile", "write", pos_profile
+        ):
             return {
                 "status": False,
                 "message": _("You don't have permission to update this POS Profile")

@@ -4,6 +4,8 @@ import frappe
 from frappe import _
 
 from fadl_pos.services._base import BaseService
+from fadl_pos.services.customer_service import CustomerService
+from fadl_pos.services.session_service import SessionService
 from fadl_pos.services.stock_service import StockService
 from fadl_pos.serializers.catalog import CatalogResponseSerializer
 
@@ -257,7 +259,7 @@ class CatalogService(BaseService):
                     "warehouse": "...",
                     "currency": "...",
                     "selling_price_list": "...",
-                    "customer": "...",
+                    "customer": { "...": "..." },
                     "hide_images": false,
                     "hide_unavailable_items": false,
                     "auto_add_item_to_cart": false,
@@ -281,8 +283,18 @@ class CatalogService(BaseService):
                 "warehouses": [
                     {"name": "Stores - FT", "warehouse_name": "Stores - FT"},
                     ...
-                ]
+                ],
+                "checklists": {
+                    "opening": [{"title": "..."}],
+                    "closing": [{"title": "..."}],
+                }
             }
+
+        ``checklists`` — same structure as in ``SessionService.get_list`` / ``_fetch_checklists``
+        (opening / closing titles for the POS Profile).
+
+        ``pos_profile.customer`` — full **Customer** document dict (same shape as
+        ``CustomerService.get_details``), or ``null`` if profile has no default customer / missing doc.
 
         ``warehouses`` — from :meth:`fadl_pos.services.stock_service.StockService.get_warehouses`
         (active leaf warehouses of the profile company).
@@ -350,13 +362,23 @@ class CatalogService(BaseService):
         stock = StockService()
         warehouses = stock.get_warehouses(pos_profile)
 
+        checklists_map = SessionService()._fetch_checklists([pos_profile])
+        checklists_payload = checklists_map.get(pos_profile) or {"opening": [], "closing": []}
+
+        default_customer_doc = None
+        if getattr(profile, "customer", None):
+            try:
+                default_customer_doc = CustomerService().get_details(profile.customer)["customer"]
+            except frappe.DoesNotExistError:
+                default_customer_doc = None
+
         pos_out = {
             "name": profile.name,
             "company": profile.company,
             "warehouse": profile.warehouse,
             "currency": profile.currency,
             "selling_price_list": profile.selling_price_list,
-            "customer": profile.customer,
+            "customer": default_customer_doc,
             "hide_images": bool(profile.hide_images),
             "hide_unavailable_items": bool(profile.hide_unavailable_items),
             "auto_add_item_to_cart": bool(profile.auto_add_item_to_cart),
@@ -372,6 +394,10 @@ class CatalogService(BaseService):
             "taxes_and_charges": profile.taxes_and_charges or None,
             "tax_category": profile.tax_category or None,
         }
+
+        invoice_type = frappe.db.get_single_value("POS Settings", "invoice_type") or "POS Invoice"
+        if invoice_type not in ("POS Invoice", "Sales Invoice"):
+            invoice_type = "POS Invoice"
 
         return {
             "opening_voucher": {
@@ -391,12 +417,14 @@ class CatalogService(BaseService):
                 "tree": self._item_group_boot_tree(profile, allow_names),
             },
             "warehouses": warehouses,
+            "checklists": checklists_payload,
+            "invoice_type": invoice_type,
         }
 
     @staticmethod
     def _item_group_disabled_supported() -> bool:
-        """If False, ERPNext vanilla Item Group is used (no active/inactive semantics here)."""
-        return frappe.db.has_column("Item Group", "disabled")
+        """Vanilla ERPNext has no ``Item Group.disabled``; never filter by it."""
+        return False
 
     @staticmethod
     def _item_group_sql_active_fragment(table_alias: str) -> str:

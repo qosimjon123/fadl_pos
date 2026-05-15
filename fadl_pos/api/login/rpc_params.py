@@ -14,3 +14,12 @@ def optional_str_param(field_label: str, value: object | None) -> str | None:
 	if isinstance(value, str):
 		return value
 	frappe.throw(_("{0} must be text").format(field_label), frappe.ValidationError)
+
+
+# Frappe passes the full ``form_dict`` into whitelisted methods, including ``cmd``.
+RPC_NOISE_KEYS = frozenset({"cmd"})
+
+
+def strip_rpc_noise(kwargs: dict) -> dict:
+	"""Drop keys that are not domain parameters."""
+	return {k: v for k, v in kwargs.items() if k not in RPC_NOISE_KEYS}
