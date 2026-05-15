@@ -1,3 +1,12 @@
+"""
+Stock availability, serial helpers, and POS Profile warehouse updates.
+
+All read paths delegate to ERPNext stock/POS helpers (``get_stock_availability``,
+``auto_fetch_serial_number``, ``get_pos_reserved_serial_nos``).
+
+**StockService.get(action, **kwargs)** returns action-specific dicts — see ``fadl_pos.api.stock.get`` docstring.
+``update_warehouse`` mutates **POS Profile** after permission + company checks.
+"""
 import frappe
 from frappe import _
 from frappe.utils import flt, cint
@@ -8,7 +17,8 @@ from fadl_pos.serializers.stock import StockResponseSerializer
 from erpnext.accounts.doctype.pos_invoice.pos_invoice import get_stock_availability as native_get_stock
 
 class StockService(BaseService):
-    
+    """Wrap native POS stock queries and profile warehouse maintenance."""
+
     def get(self, action: str, **kwargs) -> StockResponseSerializer:
         """
         Unified entry point for stock actions.

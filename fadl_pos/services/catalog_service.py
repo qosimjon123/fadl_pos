@@ -1,3 +1,9 @@
+"""
+Item catalog: native ``point_of_sale`` search/list/scan plus SPA ``boot`` payload.
+
+See :meth:`CatalogService.boot_pos` for the large composite response (opening voucher, profile, item group
+trees, warehouses, checklists).
+"""
 from collections import defaultdict
 
 import frappe
@@ -22,7 +28,8 @@ from erpnext.accounts.doctype.pos_invoice.pos_invoice import (
 from frappe.utils.nestedset import get_root_of
 
 class CatalogService(BaseService):
-    
+    """Thin wrappers around ERPNext POS page controllers where possible."""
+
     def get(self, action: str, **kwargs) -> CatalogResponseSerializer:
         """
         Unified entry point for catalog actions.
@@ -49,7 +56,7 @@ class CatalogService(BaseService):
         else:
             frappe.throw(_("Invalid action: {0}").format(action))
 
-    def get_items(self, start=0, limit=20, price_list=None, item_group=None, pos_profile=None, search_term=""):
+    def get_items(self, start=0, limit=15, price_list=None, item_group=None, pos_profile=None, search_term=""):
         """
         Native wrapper for listing items.
         """

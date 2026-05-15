@@ -24,7 +24,8 @@ def sync(action: str, data: str):
 	  for future partial-return payloads (currently ERPNext return builder receives native defaults).
 	- ``void``: ``name`` (str, required) — draft deleted; submitted cancelled via ``doc.cancel()``.
 	- ``validate``: ``items`` (list, required) — cart rows with at least ``item_code``, ``qty``;
-	  ``warehouse`` (str, required).
+	  ``warehouse`` (str, required). Optional ``price_list`` or ``pos_profile`` (uses profile's selling
+	  price list) to add rate warnings vs **Item Price**.
 
 	**Output:** ``dict`` — one of:
 
@@ -33,7 +34,7 @@ def sync(action: str, data: str):
 	- ``return``: ``{"status": "success", "name": "<new invoice>", "invoice": {<full doc dict>}}``
 	  (native ``make_sales_return`` / ``make_return_doc``).
 	- ``void``: ``{"status": "success", "name": "<invoice>", "message": ...}``
-	- ``validate``: ``{"valid": bool, "errors": [str, ...]}``
+	- ``validate``: ``{"valid": bool, "errors": [str, ...], "warnings": [str, ...]}``
 	"""
 	service = InvoiceService()
 	parsed_data = service._parse_json(data)

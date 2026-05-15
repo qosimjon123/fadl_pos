@@ -1,3 +1,17 @@
+"""
+Promotions and coupon apply path for fadl POS.
+
+**get(action, **kwargs)**
+
+* ``active_offers`` → ``{\"offers\": [Pricing Rule field dicts within validity window]}``.
+* ``coupons`` → ``{\"coupons\": [Coupon Code rows]}``.
+
+**apply_offer(invoice_name, coupon_code=None)**
+
+* *Input*: ``invoice_name`` — POS or Sales Invoice id; optional ``coupon_code`` sets ``doc.coupon_code``.
+* *Output*: ``{\"status\": \"success\", \"invoice\": dict}`` after native ``set_missing_values``,
+  ``calculate_taxes_and_totals``, and ``save`` (full validate + pricing rules).
+"""
 import frappe
 from frappe import _
 from frappe.utils import today, getdate
@@ -7,7 +21,8 @@ from fadl_pos.services.invoice_service import InvoiceService
 from fadl_pos.serializers.offers import OffersResponseSerializer
 
 class OffersService(BaseService):
-    
+    """Read offers/coupons; apply coupon on draft invoice using ERPNext document controller."""
+
     def get(self, action: str, **kwargs) -> OffersResponseSerializer:
         if action == "active_offers":
             return self.get_active_offers(**kwargs)
@@ -82,6 +97,8 @@ class OffersService(BaseService):
 
         if hasattr(doc, "set_missing_values"):
             doc.set_missing_values()
+        if hasattr(doc, "calculate_taxes_and_totals"):
+            doc.calculate_taxes_and_totals()
 
         doc.save()
         return {"status": "success", "invoice": doc.as_dict()}

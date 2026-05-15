@@ -1,3 +1,4 @@
+"""Past orders list — wrapper for ``erpnext...point_of_sale.get_past_order_list``."""
 import frappe
 from frappe import _
 from fadl_pos.services._base import BaseService
@@ -7,7 +8,8 @@ from fadl_pos.serializers.invoice_list import InvoiceListResponseSerializer
 from erpnext.selling.page.point_of_sale.point_of_sale import get_past_order_list
 
 class InvoiceListService(BaseService):
-    
+    """Returns merged POS + POS Sales Invoice history rows."""
+
     def get(self, action: str, **kwargs) -> InvoiceListResponseSerializer:
         if action == "history":
             return self.get_history(**kwargs)

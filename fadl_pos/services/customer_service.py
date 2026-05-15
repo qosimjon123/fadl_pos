@@ -1,10 +1,18 @@
+"""
+Customer CRUD/search and Desk POS field patches.
+
+**CustomerService.get / manage** mirror ``fadl_pos.api.customer`` — list, details, recent transactions;
+create/update via standard **Customer** documents; ``set_info`` delegates to
+``erpnext...point_of_sale.set_customer_info``.
+"""
 import frappe
 from frappe import _
 from fadl_pos.services._base import BaseService
 from fadl_pos.serializers.customer import CustomerResponseSerializer
 
 class CustomerService(BaseService):
-    
+    """Customer documents + native POS helpers."""
+
     def get(self, action: str, **kwargs) -> CustomerResponseSerializer:
         if action == "list":
             return self.get_list(**kwargs)
