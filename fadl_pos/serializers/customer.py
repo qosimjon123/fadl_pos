@@ -1,15 +1,7 @@
-from typing import TypedDict, List, Optional
-
-class CustomerSerializer(TypedDict):
-    name: str
-    customer_name: str
-    email_id: Optional[str]
-    mobile_no: Optional[str]
-    customer_group: str
-    territory: str
+from typing import TypedDict, List, Dict, Any, Optional
 
 class CustomerResponseSerializer(TypedDict, total=False):
-    customers: List[CustomerSerializer]
-    customer: Optional[CustomerSerializer]
+    customers: List[Dict[str, Any]]
+    customer: Optional[Dict[str, Any]]
     status: str
     message: Optional[str]

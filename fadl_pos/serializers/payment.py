@@ -1,10 +1,4 @@
-from typing import TypedDict, List, Optional, Dict
-
-class LoyaltyPointSerializer(TypedDict):
-    customer: str
-    loyalty_program: str
-    loyalty_points: int
-    redeem_loyalty_points: int
+from typing import TypedDict, Dict, Any, Optional
 
 class CouponSerializer(TypedDict):
     coupon_code: str

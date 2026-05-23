@@ -477,4 +477,3 @@ class SessionService(BaseService):
             "closing_entry": closing_entry.name,
             "error_message": closing_entry.error_message if closing_entry.status == "Failed" else None
         }
-

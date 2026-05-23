@@ -185,20 +185,69 @@ class InvoiceService(BaseService):
         }
 
     def make_return(self, data: dict) -> InvoiceResponseSerializer:
-        """Create a return via ``make_sales_return`` (POS Invoice) or ``make_return_doc`` (Sales Invoice)."""
-        from erpnext.accounts.doctype.pos_invoice.pos_invoice import make_sales_return
-        from erpnext.controllers.sales_and_purchase_return import make_return_doc
+        """
+        Desk-equivalent return: empty invoice shell + native ``make_sales_return`` with ``target_doc``,
+        then profile/warehouse + ``set_missing_values`` / ``calculate_taxes_and_totals``.
+
+        Mirrors ``pos_controller.js`` (``make_invoice_frm`` → ``make_return_invoice`` →
+        ``set_pos_profile_data`` / ``set_pos_data``).
+        """
+        from erpnext.accounts.doctype.pos_invoice.pos_invoice import (
+            make_sales_return as make_pos_invoice_return,
+        )
+        from erpnext.accounts.doctype.sales_invoice.sales_invoice import (
+            make_sales_return as make_sales_invoice_return,
+        )
 
         source_name = data.get("return_against")
         if not source_name:
             frappe.throw(_("Original invoice name is required for return."))
 
         if frappe.db.exists("POS Invoice", source_name):
-            return_doc = make_sales_return(source_name)
+            inv_doctype = "POS Invoice"
+            source_doc = frappe.get_doc("POS Invoice", source_name)
+            make_return_fn = make_pos_invoice_return
         elif frappe.db.exists("Sales Invoice", source_name):
-            return_doc = make_return_doc("Sales Invoice", source_name)
+            inv_doctype = "Sales Invoice"
+            source_doc = frappe.get_doc("Sales Invoice", source_name)
+            make_return_fn = make_sales_invoice_return
         else:
             frappe.throw(_("Invoice {0} not found").format(source_name))
+
+        if source_doc.docstatus != 1:
+            frappe.throw(_("You can only return against a submitted invoice."))
+
+        from erpnext.controllers.sales_and_purchase_return import is_invoice_returnable
+        if not is_invoice_returnable(inv_doctype, source_name):
+            frappe.throw(_("All the items have been already returned."))
+
+        # Desk: make_invoice_frm — new blank doc with POS flags before mapping return onto it.
+        target_doc = frappe.new_doc(inv_doctype)
+        target_doc.set("items", [])
+        target_doc.is_pos = 1
+        if inv_doctype == "Sales Invoice":
+            target_doc.is_created_using_pos = 1
+
+        return_doc = make_return_fn(source_name, target_doc)
+
+        # Desk: set_pos_profile_data — session profile / warehouse (optional RPC overrides).
+        company = data.get("company") or return_doc.company or source_doc.company
+        pos_profile = (
+            data.get("pos_profile")
+            or return_doc.get("pos_profile")
+            or source_doc.get("pos_profile")
+        )
+        return_doc.company = company
+        if pos_profile:
+            return_doc.pos_profile = pos_profile
+
+        set_wh = data.get("set_warehouse")
+        if set_wh:
+            return_doc.set_warehouse = set_wh
+        elif pos_profile:
+            profile_wh = frappe.db.get_value("POS Profile", pos_profile, "warehouse")
+            if profile_wh:
+                return_doc.set_warehouse = profile_wh
 
         if hasattr(return_doc, "set_missing_values"):
             return_doc.set_missing_values()
@@ -238,7 +287,5 @@ class InvoiceService(BaseService):
 
         return ValidationService.validate_cart_items(
             data.get("items", []),
-            data.get("warehouse"),
-            price_list=data.get("price_list"),
-            pos_profile=data.get("pos_profile"),
+            data.get("warehouse")
         )

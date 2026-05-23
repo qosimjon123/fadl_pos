@@ -157,19 +157,13 @@ class StockService(BaseService):
         }
 
 
-    def get_warehouses(self, pos_profile: str) -> list:
+    def get_warehouses(self, company: str) -> list:
         """
-        Get the warehouses for the POS Profile.
+        Get all active leaf warehouses for the company.
         """
-        if not pos_profile:
-            frappe.throw(_("POS Profile is required to get warehouses."))
-
-        # Get the company from POS Profile
-        company = frappe.db.get_value("POS Profile", pos_profile, "company")
         if not company:
-            return []
-        # Get all active leaf warehouses for the company (exclude group warehouses).
-        # ``limit_page_length=0`` = no row cap (return every matching warehouse).
+            frappe.throw(_("Company is required to get warehouses."))
+
         warehouses = frappe.get_list(
             "Warehouse",
             filters={

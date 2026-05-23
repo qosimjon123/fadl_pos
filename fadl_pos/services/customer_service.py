@@ -58,7 +58,43 @@ class CustomerService(BaseService):
         Native: Get full customer info.
         """
         doc = frappe.get_doc("Customer", customer)
-        return {"customer": doc.as_dict()}
+        customer_dict = doc.as_dict()
+
+        # 1. Интеграция программы лояльности
+        if customer_dict.get("loyalty_program"):
+            try:
+                from erpnext.accounts.doctype.loyalty_program.loyalty_program import get_loyalty_program_details_with_points
+                loyalty_info = get_loyalty_program_details_with_points(
+                    customer, 
+                    customer_dict["loyalty_program"], 
+                    silent=True
+                )
+                customer_dict["loyalty_points"] = loyalty_info.get("loyalty_points", 0)
+                customer_dict["conversion_factor"] = loyalty_info.get("conversion_factor", 1)
+            except Exception:
+                customer_dict["loyalty_points"] = 0
+                customer_dict["conversion_factor"] = 1
+
+        # 2. Эксклюзив: Текущий баланс (долг) клиента
+        try:
+            from erpnext.accounts.utils import get_balance_on
+            # Отрицательный баланс в дебиторке означает, что клиент нам должен (или наоборот, зависит от плана счетов)
+            # Узнаем валюту и баланс
+            company = frappe.defaults.get_user_default("Company")
+            if company:
+                balance = get_balance_on(party_type="Customer", party=customer, company=company)
+                customer_dict["outstanding_balance"] = balance
+        except Exception:
+            pass
+
+        # 3. Эксклюзив: Последние транзакции клиента (для быстрой истории покупок на кассе)
+        try:
+            from erpnext.selling.page.point_of_sale.point_of_sale import get_customer_recent_transactions
+            customer_dict["recent_transactions"] = get_customer_recent_transactions(customer)
+        except Exception:
+            pass
+
+        return {"customer": customer_dict}
 
     def create(self, data: dict) -> CustomerResponseSerializer:
         """
