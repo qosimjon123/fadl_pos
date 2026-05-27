@@ -88,11 +88,12 @@ class CustomerService(BaseService):
             pass
 
         # 3. Эксклюзив: Последние транзакции клиента (для быстрой истории покупок на кассе)
-        try:
-            from erpnext.selling.page.point_of_sale.point_of_sale import get_customer_recent_transactions
-            customer_dict["recent_transactions"] = get_customer_recent_transactions(customer)
-        except Exception:
-            pass
+        # TODO: Пока это нагружает систему, поэтому отключил
+        # try:
+        #     from erpnext.selling.page.point_of_sale.point_of_sale import get_customer_recent_transactions
+        #     customer_dict["recent_transactions"] = get_customer_recent_transactions(customer)
+        # except Exception:
+        #     pass
 
         return {"customer": customer_dict}
 

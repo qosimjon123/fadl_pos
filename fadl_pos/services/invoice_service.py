@@ -80,6 +80,7 @@ _ITEM_COMPUTED_KEYS = frozenset(
 )
 
 
+
 def _strip_untrusted_invoice_payload(data: dict) -> dict:
     """Remove client-supplied totals so :meth:`~frappe.model.document.Document.save` recomputes them."""
     out = dict(data)

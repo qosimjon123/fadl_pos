@@ -77,8 +77,51 @@ class CatalogService(BaseService):
 
 
 
+    def init_empty_invoice_template(self, invoice, pos_profile):
+        """
+        Build an initialized POS invoice template on the server.
 
+        JS uses ``frm.trigger("set_pos_data")`` on the client; server-side equivalent is
+        ``set_missing_values`` + ``calculate_taxes_and_totals`` on the document controller.
+        """
+        common_values = {
+            "company": pos_profile.company,
+            "pos_profile": pos_profile.name,
+            "items": [],
+            "is_pos": 1,
+            "allocate_advances_automatically": 0,
+        }
 
+        # In multi-warehouse carts, each row carries its own warehouse.
+        # Keep set_warehouse unset in the template.
+        common_values["set_warehouse"] = None
+
+        # Doctype-specific payload blocks: frontend gets one clear template based on
+        # POS Settings.invoice_type and does not need to infer mixed behavior.
+        sales_invoice_values = {
+            "is_created_using_pos": 1,
+        }
+        pos_invoice_values = {
+            # Explicit for parity with POSInvoice defaults/flow.
+            "is_return": 0,
+        }
+
+        for key, value in common_values.items():
+            invoice.set(key, value)
+
+        if invoice.doctype == "Sales Invoice":
+            for key, value in sales_invoice_values.items():
+                invoice.set(key, value)
+        elif invoice.doctype == "POS Invoice":
+            for key, value in pos_invoice_values.items():
+                invoice.set(key, value)
+
+        if hasattr(invoice, "set_missing_values"):
+            invoice.set_missing_values(for_validate=bool(invoice.get("is_return")))
+        if hasattr(invoice, "calculate_taxes_and_totals"):
+            invoice.calculate_taxes_and_totals()
+
+        return invoice
 
 
     def boot_pos(self, pos_profile: str):
@@ -191,7 +234,10 @@ class CatalogService(BaseService):
         if invoice_type not in ("POS Invoice", "Sales Invoice"):
             invoice_type = "POS Invoice"
 
-        empty_invoice = frappe.new_doc(invoice_type).as_dict()
+        empty_invoice = self.init_empty_invoice_template(
+            frappe.new_doc(invoice_type),
+            profile_row,
+        ).as_dict()
         item_groups_tree = self._build_item_group_tree(pos_profile)
 
         return {
