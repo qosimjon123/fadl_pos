@@ -5,6 +5,7 @@ See :meth:`CatalogService.boot_pos` for the large composite response (opening vo
 trees, warehouses, checklists).
 """
 import frappe
+from collections import defaultdict
 from frappe import _
 
 from fadl_pos.services._base import BaseService
@@ -12,37 +13,16 @@ from fadl_pos.services.customer_service import CustomerService
 from fadl_pos.services.session_service import SessionService
 from fadl_pos.services.stock_service import StockService
 from fadl_pos.serializers.catalog import CatalogResponseSerializer
+from erpnext.stock.utils import scan_barcode
+from erpnext.accounts.doctype.pos_invoice.pos_invoice import get_item_group, get_stock_availability
+from frappe.utils.nestedset import get_root_of
+from erpnext.accounts.doctype.pos_profile.pos_profile import get_child_nodes, get_item_groups
+from frappe.utils import cint, get_datetime
+from erpnext.stock.get_item_details import get_conversion_factor
+from frappe.query_builder import DocType, Order
 
-from erpnext.selling.page.point_of_sale.point_of_sale import get_items as native_get_items
 
-# Parent fields only — child tables (payments, applicable_for_users, checklists, …) are excluded at ORM level.
-_BOOT_POS_PROFILE_FIELDS = (
-    "name",
-    "company",
-    "warehouse",
-    "currency",
-    "selling_price_list",
-    "customer",
-    "hide_images",
-    "auto_add_item_to_cart",
-    "print_receipt_on_order_complete",
-    "action_on_new_invoice",
-    "allow_rate_change",
-    "allow_discount_change",
-    "allow_partial_payment",
-    "set_grand_total_to_default_mop",
-    "ignore_pricing_rule",
-    "apply_discount_on",
-    "taxes_and_charges",
-    "tax_category",
-    "letter_head",
-    "write_off_account",
-    "write_off_cost_center",
-    "write_off_limit",
-    "account_for_change_amount",
-    "disable_rounded_total",
-    "print_format",
-)
+from fadl_pos.meta import POS_PROFILE_FIELDS
 
 class CatalogService(BaseService):
     """Thin wrappers around ERPNext POS page controllers where possible."""
@@ -61,21 +41,304 @@ class CatalogService(BaseService):
         else:
             frappe.throw(_("Invalid action: {0}").format(action))
 
-    def get_items(self, start=0, limit=15, price_list=None, item_group=None, pos_profile=None, search_term=""):
-        """
-        Native wrapper for listing items.
-        """
-        result = native_get_items(
-            start=start,
-            page_length=limit,
-            price_list=price_list,
-            item_group=item_group,
-            pos_profile=pos_profile,
-            search_term=search_term
+
+    def search_for_serial_or_batch_or_barcode_number(self, search_value: str) -> dict[str, str | None]:
+        return scan_barcode(search_value)
+
+
+    def filter_result_items(self, result, pos_profile):
+        if result and result.get("items"):
+            pos_profile_doc = frappe.get_cached_doc("POS Profile", pos_profile)
+            pos_item_groups = get_item_group(pos_profile_doc)
+            if not pos_item_groups:
+                return
+            result["items"] = [item for item in result.get("items") if item.get("item_group") in pos_item_groups]
+
+
+    def search_by_term(self, search_term, warehouse, price_list):
+        result = self.search_for_serial_or_batch_or_barcode_number(search_term) or {}
+
+        item_code = result.get("item_code", search_term)
+        serial_no = result.get("serial_no", "")
+        batch_no = result.get("batch_no", "")
+        barcode = result.get("barcode", "")
+
+        if not result:
+            return
+
+        item_doc = frappe.get_doc("Item", item_code)
+
+        if not item_doc:
+            return
+
+        item = {
+            "barcode": barcode,
+            "batch_no": batch_no,
+            "description": item_doc.description,
+            "is_stock_item": item_doc.is_stock_item,
+            "item_code": item_doc.name,
+            "item_group": item_doc.item_group,
+            "item_image": item_doc.image,
+            "item_name": item_doc.item_name,
+            "serial_no": serial_no,
+            "stock_uom": item_doc.stock_uom,
+            "uom": item_doc.stock_uom,
+        }
+
+        if barcode:
+            barcode_info = next(filter(lambda x: x.barcode == barcode, item_doc.get("barcodes", [])), None)
+            if barcode_info and barcode_info.uom:
+                uom = next(filter(lambda x: x.uom == barcode_info.uom, item_doc.uoms), {})
+                item.update(
+                    {
+                        "uom": barcode_info.uom,
+                        "conversion_factor": uom.get("conversion_factor", 1),
+                    }
+                )
+
+        item_stock_qty, is_stock_item, is_negative_stock_allowed = get_stock_availability(item_code, warehouse)
+        item_stock_qty = item_stock_qty // item.get("conversion_factor", 1)
+        item.update({"actual_qty": item_stock_qty})
+
+        price_filters = {
+            "price_list": price_list,
+            "item_code": item_code,
+        }
+
+        if batch_no:
+            price_filters["batch_no"] = ["in", [batch_no, ""]]
+
+        if serial_no:
+            price_filters["uom"] = item_doc.stock_uom
+
+        price = frappe.get_list(
+            doctype="Item Price",
+            filters=price_filters,
+            fields=["uom", "currency", "price_list_rate", "batch_no"],
         )
-        return result
+
+        def __sort(p):
+            p_uom = p.get("uom")
+            p_batch = p.get("batch_no")
+            batch_no = item.get("batch_no")
+
+            if batch_no and p_batch and p_batch == batch_no:
+                if p_uom == item.get("uom"):
+                    return 0
+                elif p_uom == item.get("stock_uom"):
+                    return 1
+                else:
+                    return 2
+
+            if p_uom == item.get("uom"):
+                return 3
+            elif p_uom == item.get("stock_uom"):
+                return 4
+            else:
+                return 5
+
+        # sort by fallback preference. always pick exact uom and batch number match if available
+        price = sorted(price, key=__sort)
+
+        if len(price) > 0:
+            p = price.pop(0)
+            item.update(
+                {
+                    "currency": p.get("currency"),
+                    "price_list_rate": p.get("price_list_rate"),
+                }
+            )
+
+        return {"items": [item]}
 
 
+    def get_conditions(self, search_term):
+        condition = "("
+        condition += """item.name like {search_term}
+            or item.item_name like {search_term}""".format(search_term=frappe.db.escape("%" + search_term + "%"))
+        condition += self.add_search_fields_condition(search_term)
+        condition += ")"
+
+        return condition
+
+
+    def add_search_fields_condition(self, search_term):
+        condition = ""
+        search_fields = frappe.get_all("POS Search Fields", fields=["fieldname"])
+        if search_fields:
+            for field in search_fields:
+                if not field.get("fieldname"):
+                    continue
+                condition += " or item.`{}` like {}".format(
+                    field["fieldname"], frappe.db.escape("%" + search_term + "%")
+                )
+        return condition
+
+
+    def get_item_group_condition(self, pos_profile):
+        cond = "and 1=1"
+        item_groups = get_item_groups(pos_profile)
+        if item_groups:
+            cond = "and item.item_group in (%s)" % (", ".join(["%s"] * len(item_groups)))
+
+        return cond % tuple(item_groups)
+
+    def _fetch_item_prices_bulk(self, item_codes, price_list, current_date):
+        """One Item Price query for all item_codes; rows grouped per item, valid_from desc."""
+        if not item_codes or not price_list:
+            return {}
+
+        ItemPrice = DocType("Item Price")
+        rows = (
+            frappe.qb.from_(ItemPrice)
+            .select(
+                ItemPrice.item_code,
+                ItemPrice.price_list_rate,
+                ItemPrice.currency,
+                ItemPrice.uom,
+                ItemPrice.batch_no,
+                ItemPrice.valid_from,
+                ItemPrice.valid_upto,
+            )
+            .where(ItemPrice.price_list == price_list)
+            .where(ItemPrice.item_code.isin(item_codes))
+            .where(ItemPrice.selling == 1)
+            .where((ItemPrice.valid_from <= current_date) | (ItemPrice.valid_from.isnull()))
+            .where((ItemPrice.valid_upto >= current_date) | (ItemPrice.valid_upto.isnull()))
+            .orderby(ItemPrice.valid_from, order=Order.desc)
+        ).run(as_dict=True)
+
+        prices_by_item = defaultdict(list)
+        for row in rows:
+            prices_by_item[row.item_code].append(row)
+
+        # Global ORDER BY does not guarantee per-item ordering after grouping.
+        for prices in prices_by_item.values():
+            prices.sort(
+                key=lambda d: get_datetime(d["valid_from"]) if d.get("valid_from") else get_datetime("1900-01-01"),
+                reverse=True,
+            )
+
+        return prices_by_item
+
+    def _resolve_item_uom_price(self, item, item_prices):
+        """
+        Pick uom, rate, currency, and Item Price.batch_no for catalog list rows.
+
+        item_prices are pre-sorted by valid_from desc. batch_no here is the price-rule
+        field on Item Price, not stock/line batch from barcode scan.
+        """
+        stock_uom_price = next((d for d in item_prices if d.get("uom") == item.stock_uom), {})
+        item_uom = item.stock_uom
+        item_uom_price = stock_uom_price
+
+        if item.sales_uom and item.sales_uom != item.stock_uom:
+            item_uom = item.sales_uom
+            sales_uom_price = next((d for d in item_prices if d.get("uom") == item.sales_uom), {})
+            if sales_uom_price:
+                item_uom_price = sales_uom_price
+
+        if item_prices and not item_uom_price:
+            item_uom = item_prices[0].get("uom")
+            item_uom_price = item_prices[0]
+
+        return item_uom, item_uom_price
+
+    def get_items(self, start, page_length=15, price_list=None, item_group=None, pos_profile=None, search_term=""):        
+        warehouse, hide_unavailable_items = frappe.db.get_value(
+            "POS Profile", pos_profile, ["warehouse", "hide_unavailable_items"]
+        )
+
+        result = []
+
+        if search_term:
+            result = self.search_by_term(search_term, warehouse, price_list) or []
+            self.filter_result_items(result, pos_profile)
+            if result:
+                return result
+
+        if not frappe.db.exists("Item Group", item_group):
+            item_group = get_root_of("Item Group")
+
+        condition = self.get_conditions(search_term)
+        condition += self.get_item_group_condition(pos_profile)
+
+        lft, rgt = frappe.db.get_value("Item Group", item_group, ["lft", "rgt"])
+
+        bin_join_selection, bin_join_condition = "", ""
+        if hide_unavailable_items:
+            bin_join_selection = "LEFT JOIN `tabBin` bin ON bin.item_code = item.name"
+            bin_join_condition = "AND (item.is_stock_item = 0 OR (item.is_stock_item = 1 AND bin.warehouse = %(warehouse)s AND bin.actual_qty > 0))"
+
+        items_data = frappe.db.sql(
+            """
+            SELECT
+                item.name AS item_code,
+                item.item_name,
+                item.description,
+                item.stock_uom,
+                item.image AS item_image,
+                item.is_stock_item,
+                item.sales_uom
+            FROM
+                `tabItem` item {bin_join_selection}
+            WHERE
+                item.disabled = 0
+                AND item.has_variants = 0
+                AND item.is_sales_item = 1
+                AND item.is_fixed_asset = 0
+                AND item.item_group in (SELECT name FROM `tabItem Group` WHERE lft >= {lft} AND rgt <= {rgt})
+                AND {condition}
+                {bin_join_condition}
+            ORDER BY
+                item.name asc
+            LIMIT
+                {page_length} offset {start}""".format(
+                start=cint(start),
+                page_length=cint(page_length),
+                lft=cint(lft),
+                rgt=cint(rgt),
+                condition=condition,
+                bin_join_selection=bin_join_selection,
+                bin_join_condition=bin_join_condition,
+            ),
+            {"warehouse": warehouse},
+            as_dict=1,
+        )
+
+        # return (empty) list if there are no results
+        if not items_data:
+            return result
+
+        current_date = frappe.utils.today()
+        item_codes = [row.item_code for row in items_data]
+        prices_by_item = self._fetch_item_prices_bulk(item_codes, price_list, current_date)
+
+        for item in items_data:
+            item.actual_qty, _, is_negative_stock_allowed = get_stock_availability(item.item_code, warehouse)
+
+            item_prices = prices_by_item.get(item.item_code, [])
+            item_uom, item_uom_price = self._resolve_item_uom_price(item, item_prices)
+
+            item_conversion_factor = get_conversion_factor(item.item_code, item_uom).get("conversion_factor")
+
+            if item.stock_uom != item_uom:
+                item.actual_qty = item.actual_qty // item_conversion_factor
+
+            if item_uom_price and item_uom != item_uom_price.get("uom"):
+                item_uom_price.price_list_rate = item_uom_price.price_list_rate * item_conversion_factor
+
+            result.append(
+                {
+                    **item,
+                    "price_list_rate": item_uom_price.get("price_list_rate"),
+                    "currency": item_uom_price.get("currency"),
+                    "uom": item_uom,
+                    "batch_no": item_uom_price.get("batch_no"),
+                }
+            )
+
+        return {"items": result}
 
     def init_empty_invoice_template(self, invoice, pos_profile):
         """
@@ -84,9 +347,10 @@ class CatalogService(BaseService):
         JS uses ``frm.trigger("set_pos_data")`` on the client; server-side equivalent is
         ``set_missing_values`` + ``calculate_taxes_and_totals`` on the document controller.
         """
+        profile = frappe._dict(pos_profile)
         common_values = {
-            "company": pos_profile.company,
-            "pos_profile": pos_profile.name,
+            "company": profile.company,
+            "pos_profile": profile.name,
             "items": [],
             "is_pos": 1,
             "allocate_advances_automatically": 0,
@@ -131,13 +395,8 @@ class CatalogService(BaseService):
         if not pos_profile:
             frappe.throw(_("Invalid POS Profile"))
 
-        profile_row = frappe.db.get_value(
-            "POS Profile",
-            {"name": pos_profile, "disabled": 0},
-            _BOOT_POS_PROFILE_FIELDS,
-            as_dict=True,
-        )
-        if not profile_row:
+        profile_doc = frappe.get_doc("POS Profile", pos_profile)
+        if profile_doc.disabled:
             frappe.throw(_("Invalid POS Profile"))
 
         open_rows = frappe.get_all(
@@ -160,21 +419,11 @@ class CatalogService(BaseService):
             )
         opening = frappe.get_doc("POS Opening Entry", open_rows[0].name)
 
-        pay_rows = frappe.get_all(
-            "POS Payment Method",
-            filters={"parent": pos_profile, "parenttype": "POS Profile"},
-            fields=["mode_of_payment", "default", "allow_in_returns"],
-        )
-        pay_by_mop = {row["mode_of_payment"]: row for row in pay_rows}
-        mop_keys = [r.mode_of_payment for r in (opening.balance_details or []) if r.mode_of_payment]
-        mop_types: dict[str, str | None] = {}
-        if mop_keys:
-            for mop in frappe.get_all(
-                "Mode of Payment",
-                filters={"name": ["in", list(dict.fromkeys(mop_keys))]},
-                fields=["name", "type"],
-            ):
-                mop_types[mop.name] = mop.get("type")
+        # POS Payment Method: default / allow_in_returns. type (Cash|Bank) — в Mode of Payment, один JOIN.
+        pay_by_mop = {
+            row["mode_of_payment"]: row
+            for row in SessionService()._fetch_payment_methods([pos_profile])
+        }
 
         balance_details_out = []
         for row in opening.balance_details or []:
@@ -185,59 +434,39 @@ class CatalogService(BaseService):
                     "opening_amount": row.opening_amount,
                     "default": bool(pr.get("default", 0)),
                     "allow_in_returns": bool(pr.get("allow_in_returns", 0)),
-                    "mop_type": mop_types.get(row.mode_of_payment) or "Cash",
+                    "mop_type": pr.get("mop_type") or "Cash",
                 }
             )
 
         stock = StockService()
-        warehouses = stock.get_warehouses(profile_row.get("company"))
+        warehouses = stock.get_warehouses(profile_doc.company)
 
-        checklists_map = SessionService()._fetch_checklists([pos_profile])
-        checklists_payload = checklists_map.get(pos_profile) or {"opening": [], "closing": []}
+        checklists_payload = {
+            "opening": [
+                {"title": row.title}
+                for row in (profile_doc.custom_opening_checklist or [])
+                if not row.disabled
+            ],
+            "closing": [
+                {"title": row.title}
+                for row in (profile_doc.custom_closing_checklists or [])
+                if not row.disabled
+            ],
+        }
 
         default_customer_doc = None
-        if profile_row.get("customer"):
+        if profile_doc.customer:
             try:
-                default_customer_doc = CustomerService().get_details(profile_row["customer"])["customer"]
+                default_customer_doc = CustomerService().get_details(profile_doc.customer)["customer"]
             except frappe.DoesNotExistError:
                 pass
 
         pos_out = {
-            "name": profile_row["name"],
-            "company": profile_row["company"],
-            "warehouse": profile_row["warehouse"],
-            "currency": profile_row["currency"],
-            "selling_price_list": profile_row["selling_price_list"],
-            "customer": default_customer_doc,
-            "hide_images": bool(profile_row.get("hide_images")),
-            "auto_add_item_to_cart": bool(profile_row.get("auto_add_item_to_cart")),
-            "print_receipt_on_order_complete": bool(profile_row.get("print_receipt_on_order_complete")),
-            "action_on_new_invoice": profile_row.get("action_on_new_invoice"),
-            "allow_rate_change": bool(profile_row.get("allow_rate_change")),
-            "allow_discount_change": bool(profile_row.get("allow_discount_change")),
-            "allow_partial_payment": bool(profile_row.get("allow_partial_payment")),
-            "set_grand_total_to_default_mop": bool(profile_row.get("set_grand_total_to_default_mop")),
-            "ignore_pricing_rule": bool(profile_row.get("ignore_pricing_rule")),
-            "apply_discount_on": profile_row.get("apply_discount_on"),
-            "taxes_and_charges": profile_row.get("taxes_and_charges") or None,
-            "tax_category": profile_row.get("tax_category") or None,
-            "letter_head": profile_row.get("letter_head") or None,
-            "write_off_account": profile_row.get("write_off_account") or None,
-            "write_off_cost_center": profile_row.get("write_off_cost_center") or None,
-            "write_off_limit": profile_row.get("write_off_limit"),
-            "account_for_change_amount": profile_row.get("account_for_change_amount") or None,
-            "disable_rounded_total": bool(profile_row.get("disable_rounded_total")),
-            "print_format": profile_row.get("print_format") or None,
+            field: profile_doc.get(field)
+            for field in POS_PROFILE_FIELDS
         }
+        pos_out["customer"] = default_customer_doc
 
-        invoice_type = frappe.db.get_single_value("POS Settings", "invoice_type") or "POS Invoice"
-        if invoice_type not in ("POS Invoice", "Sales Invoice"):
-            invoice_type = "POS Invoice"
-
-        empty_invoice = self.init_empty_invoice_template(
-            frappe.new_doc(invoice_type),
-            profile_row,
-        ).as_dict()
         item_groups_tree = self._build_item_group_tree(pos_profile)
 
         return {
@@ -257,8 +486,6 @@ class CatalogService(BaseService):
             },
             "warehouses": warehouses,
             "checklists": checklists_payload,
-            "invoice_type": invoice_type,
-            "empty_invoice": empty_invoice,
         }
 
     def _build_item_group_tree(self, pos_profile: str) -> list[dict]:
