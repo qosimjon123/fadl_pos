@@ -7,172 +7,153 @@ All read paths delegate to ERPNext stock/POS helpers (``get_stock_availability``
 **StockService.get(action, **kwargs)** returns action-specific dicts — see ``fadl_pos.api.stock.get`` docstring.
 ``update_warehouse`` mutates **POS Profile** after permission + company checks.
 """
+
 import frappe
-from frappe import _
-from frappe.utils import flt, cint
-from fadl_pos.services._base import BaseService
-from fadl_pos.serializers.stock import StockResponseSerializer
 
 # Native Imports
 from erpnext.accounts.doctype.pos_invoice.pos_invoice import get_stock_availability as native_get_stock
+from frappe import _
+from frappe.utils import cint, flt
+
+from fadl_pos.serializers.stock import StockResponseSerializer
+from fadl_pos.services._base import BaseService
+
 
 class StockService(BaseService):
-    """Wrap native POS stock queries and profile warehouse maintenance."""
+	"""Wrap native POS stock queries and profile warehouse maintenance."""
 
-    def get(self, action: str, **kwargs) -> StockResponseSerializer:
-        """
-        Unified entry point for stock actions.
-        """
-        if action == "single":
-            return self.get_single(**kwargs)
-        elif action == "batch":
-            return self.get_batch(**kwargs)
-        elif action == "warehouses":
-            return self.get_warehouses(**kwargs)
-        elif action == "bundle":
-            return self.get_bundle(**kwargs)
-        elif action == "auto_serial":
-            return self.auto_fetch_serial(**kwargs)
-        elif action == "reserved_serials":
-            return self.get_reserved_serials(**kwargs)
-        else:
-            frappe.throw(_("Invalid action: {0}").format(action))
+	def get(self, action: str, **kwargs) -> StockResponseSerializer:
+		"""
+		Unified entry point for stock actions.
+		"""
+		if action == "single":
+			return self.get_single(**kwargs)
+		elif action == "batch":
+			return self.get_batch(**kwargs)
+		elif action == "warehouses":
+			return self.get_warehouses(**kwargs)
+		elif action == "bundle":
+			return self.get_bundle(**kwargs)
+		elif action == "auto_serial":
+			return self.auto_fetch_serial(**kwargs)
+		elif action == "reserved_serials":
+			return self.get_reserved_serials(**kwargs)
+		else:
+			frappe.throw(_("Invalid action: {0}").format(action))
 
-    def get_single(self, item_code, warehouse):
-        """
-        Native: Get stock availability for a single item in a warehouse.
-        """
-        actual_qty, is_stock_item, is_negative_stock_allowed = native_get_stock(item_code, warehouse)
-        return {
-            "item_code": item_code,
-            "warehouse": warehouse,
-            "actual_qty": actual_qty
-        }
+	def get_single(self, item_code, warehouse):
+		"""
+		Native: Get stock availability for a single item in a warehouse.
+		"""
+		actual_qty, _is_stock_item, _is_negative_stock_allowed = native_get_stock(item_code, warehouse)
+		return {"item_code": item_code, "warehouse": warehouse, "actual_qty": actual_qty}
 
-    def get_batch(self, item_codes, warehouse):
-        """
-        Get native POS availability for multiple items.
-        """
-        if isinstance(item_codes, str):
-            item_codes = frappe.parse_json(item_codes)
+	def get_batch(self, item_codes, warehouse):
+		"""
+		Get native POS availability for multiple items.
+		"""
+		if isinstance(item_codes, str):
+			item_codes = frappe.parse_json(item_codes)
 
-        final_results = []
-        for code in item_codes:
-            actual_qty, _, _ = native_get_stock(code, warehouse)
-            final_results.append({"item_code": code, "actual_qty": actual_qty})
-        
-        return {"stocks": final_results}
+		final_results = []
+		for code in item_codes:
+			actual_qty, _, _ = native_get_stock(code, warehouse)
+			final_results.append({"item_code": code, "actual_qty": actual_qty})
 
-    def get_item_by_warehouses(self, item_code, company=None):
-        """
-        Get raw Bin availability across warehouses for a company.
-        """
-        filters = {"item_code": item_code}
-        if company:
-            filters["company"] = company
-            
-        warehouses = frappe.get_all(
-            "Bin",
-            filters=filters,
-            fields=["warehouse", "actual_qty", "reserved_qty", "projected_qty"]
-        )
-        return {"warehouses": warehouses}
+		return {"stocks": final_results}
 
-    def get_bundle(self, item_code, warehouse):
-        """
-        Native POS availability for a Product Bundle or stock item.
-        """
-        actual_qty, _, _ = native_get_stock(item_code, warehouse)
-        return {"bundle_availability": actual_qty}
+	def get_item_by_warehouses(self, item_code, company=None):
+		"""
+		Get raw Bin availability across warehouses for a company.
+		"""
+		filters = {"item_code": item_code}
+		if company:
+			filters["company"] = company
 
-    def auto_fetch_serial(self, qty, item_code, warehouse, batch_nos=None):
-        """
-        Native wrapper: Auto-fetch available serial numbers for an item.
-        """
-        from erpnext.stock.doctype.serial_no.serial_no import auto_fetch_serial_number
-        
-        serials = auto_fetch_serial_number(
-            qty=cint(qty),
-            item_code=item_code,
-            warehouse=warehouse,
-            batch_nos=batch_nos,
-            for_doctype="POS Invoice"
-        )
-        return {"serial_nos": serials}
+		warehouses = frappe.get_all(
+			"Bin", filters=filters, fields=["warehouse", "actual_qty", "reserved_qty", "projected_qty"]
+		)
+		return {"warehouses": warehouses}
 
-    def get_reserved_serials(self, item_code, warehouse):
-        """
-        Native wrapper: Get serial numbers reserved in other open POS Invoices.
-        """
-        from erpnext.stock.doctype.serial_no.serial_no import get_pos_reserved_serial_nos
-        
-        filters = {"item_code": item_code, "warehouse": warehouse}
-        serials = get_pos_reserved_serial_nos(filters)
-        return {"reserved_serial_nos": serials}
+	def get_bundle(self, item_code, warehouse):
+		"""
+		Native POS availability for a Product Bundle or stock item.
+		"""
+		actual_qty, _, _ = native_get_stock(item_code, warehouse)
+		return {"bundle_availability": actual_qty}
 
+	def auto_fetch_serial(self, qty, item_code, warehouse, batch_nos=None):
+		"""
+		Native wrapper: Auto-fetch available serial numbers for an item.
+		"""
+		from erpnext.stock.doctype.serial_no.serial_no import auto_fetch_serial_number
 
-    def update_warehouse(self, pos_profile: str, warehouse: str):
-        """
-        Update the warehouse for the POS Profile.
-        """
+		serials = auto_fetch_serial_number(
+			qty=cint(qty),
+			item_code=item_code,
+			warehouse=warehouse,
+			batch_nos=batch_nos,
+			for_doctype="POS Invoice",
+		)
+		return {"serial_nos": serials}
 
-        # Check if user has access to this POS Profile
-        has_access = frappe.db.exists(
-            "POS Profile User",
-            {"parent": pos_profile, "user": frappe.session.user}
-        )
+	def get_reserved_serials(self, item_code, warehouse):
+		"""
+		Native wrapper: Get serial numbers reserved in other open POS Invoices.
+		"""
+		from erpnext.stock.doctype.serial_no.serial_no import get_pos_reserved_serial_nos
 
-        if not has_access and not frappe.has_permission(
-            "POS Profile", "write", pos_profile
-        ):
-            return {
-                "status": False,
-                "message": _("You don't have permission to update this POS Profile")
-            }
+		filters = {"item_code": item_code, "warehouse": warehouse}
+		serials = get_pos_reserved_serial_nos(filters)
+		return {"reserved_serial_nos": serials}
 
-        # Get POS Profile to check company
-        profile_doc = frappe.get_doc("POS Profile", pos_profile)
-        # Validate warehouse exists and is active
-        warehouse_doc = frappe.get_doc("Warehouse", warehouse)
-        if warehouse_doc.disabled and not warehouse_doc.is_group_warehouse:
-            frappe.throw(_("Warehouse {0} is disabled").format(warehouse))
+	def update_warehouse(self, pos_profile: str, warehouse: str):
+		"""
+		Update the warehouse for the POS Profile.
+		"""
 
-        # Validate warehouse belongs to same company
-        if warehouse_doc.company != profile_doc.company:
-            return {
-                "status": False,
-                "message": _(
-                    "Warehouse {0} belongs to {1}, but POS Profile belongs to {2}"
-                ).format(warehouse, warehouse_doc.company, profile_doc.company)
-            }
+		# Check if user has access to this POS Profile
+		has_access = frappe.db.exists(
+			"POS Profile User", {"parent": pos_profile, "user": frappe.session.user}
+		)
 
-        # Update the POS Profile
-        profile_doc.warehouse = warehouse
-        profile_doc.save()
+		if not has_access and not frappe.has_permission("POS Profile", "write", pos_profile):
+			return {"status": False, "message": _("You don't have permission to update this POS Profile")}
 
-        return {
-            "status": True,
-            "message": _("Warehouse updated successfully"),
-            "warehouse": warehouse
-        }
+		# Get POS Profile to check company
+		profile_doc = frappe.get_doc("POS Profile", pos_profile)
+		# Validate warehouse exists and is active
+		warehouse_doc = frappe.get_doc("Warehouse", warehouse)
+		if warehouse_doc.disabled and not warehouse_doc.is_group_warehouse:
+			frappe.throw(_("Warehouse {0} is disabled").format(warehouse))
 
+		# Validate warehouse belongs to same company
+		if warehouse_doc.company != profile_doc.company:
+			return {
+				"status": False,
+				"message": _("Warehouse {0} belongs to {1}, but POS Profile belongs to {2}").format(
+					warehouse, warehouse_doc.company, profile_doc.company
+				),
+			}
 
-    def get_warehouses(self, company: str) -> list:
-        """
-        Get all active leaf warehouses for the company.
-        """
-        if not company:
-            frappe.throw(_("Company is required to get warehouses."))
+		# Update the POS Profile
+		profile_doc.warehouse = warehouse
+		profile_doc.save()
 
-        warehouses = frappe.get_list(
-            "Warehouse",
-            filters={
-                "company": company,
-                "disabled": 0,
-                "is_group": 0
-            },
-            fields=["name", "warehouse_name"],
-            order_by="warehouse_name",
-            limit_page_length=0
-        )
-        return warehouses
+		return {"status": True, "message": _("Warehouse updated successfully"), "warehouse": warehouse}
+
+	def get_warehouses(self, company: str) -> list:
+		"""
+		Get all active leaf warehouses for the company.
+		"""
+		if not company:
+			frappe.throw(_("Company is required to get warehouses."))
+
+		warehouses = frappe.get_list(
+			"Warehouse",
+			filters={"company": company, "disabled": 0, "is_group": 0},
+			fields=["name", "warehouse_name"],
+			order_by="warehouse_name",
+			limit_page_length=0,
+		)
+		return warehouses

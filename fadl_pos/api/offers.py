@@ -1,4 +1,5 @@
 import frappe
+
 from fadl_pos.api.login.rpc_params import strip_rpc_noise
 from fadl_pos.services.offers_service import OffersService
 
@@ -25,7 +26,7 @@ def get(action: str, **kwargs):
 
 
 @frappe.whitelist(methods=["POST"])
-def apply(invoice_name: str, coupon_code: str = None):
+def apply(invoice_name: str, coupon_code: str | None = None):
 	"""
 	Re-run pricing rules on a draft invoice by saving the document (native engine).
 

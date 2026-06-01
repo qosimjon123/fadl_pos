@@ -1,4 +1,5 @@
-from typing import TypedDict, List, Dict, Any, Optional
+from typing import Any, TypedDict
+
 
 class InvoiceListResponseSerializer(TypedDict):
-    invoices: List[Dict[str, Any]]
+	invoices: list[dict[str, Any]]

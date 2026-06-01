@@ -1,4 +1,5 @@
 import frappe
+
 from fadl_pos.api.login.rpc_params import strip_rpc_noise
 from fadl_pos.services.catalog_service import CatalogService
 

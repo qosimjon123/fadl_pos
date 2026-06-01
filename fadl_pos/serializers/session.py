@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import List, NotRequired, TypedDict
+from typing import NotRequired, TypedDict
 
 
 class BalanceDetailItem(TypedDict):
@@ -17,7 +17,7 @@ class OpenShiftRequest(TypedDict):
 
 	pos_profile: str
 	company: str
-	balance_details: List[BalanceDetailItem]
+	balance_details: list[BalanceDetailItem]
 
 
 class ClosingReconciliationItem(TypedDict):
@@ -52,8 +52,8 @@ class ChecklistItem(TypedDict):
 
 
 class Checklists(TypedDict):
-	opening: List[ChecklistItem]
-	closing: List[ChecklistItem]
+	opening: list[ChecklistItem]
+	closing: list[ChecklistItem]
 
 
 class PaymentMethodSerializer(TypedDict):
@@ -70,9 +70,9 @@ class PosProfileResponseSerializer(TypedDict):
 	opening_entry: str | None
 	# Present when status is Open (early return from get_list)
 	opening_entry_date: NotRequired[datetime | date | None]
-	checklists: NotRequired[List[Checklists]]
-	payment_methods: NotRequired[List[PaymentMethodSerializer]]
+	checklists: NotRequired[list[Checklists]]
+	payment_methods: NotRequired[list[PaymentMethodSerializer]]
 
 
 class SessionListResponseSerializer(TypedDict):
-	pos_profiles: List[PosProfileResponseSerializer]
+	pos_profiles: list[PosProfileResponseSerializer]

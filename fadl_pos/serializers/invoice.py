@@ -1,10 +1,11 @@
-from typing import TypedDict, List, Dict, Any, Optional
+from typing import Any, TypedDict
+
 
 class InvoiceResponseSerializer(TypedDict, total=False):
-    status: str
-    name: str
-    message: Optional[str]
-    invoice: Optional[Dict[str, Any]]
-    valid: Optional[bool]
-    errors: Optional[List[str]]
-    warnings: Optional[List[str]]
+	status: str
+	name: str
+	message: str | None
+	invoice: dict[str, Any] | None
+	valid: bool | None
+	errors: list[str] | None
+	warnings: list[str] | None

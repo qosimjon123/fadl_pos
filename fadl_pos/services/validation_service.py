@@ -13,6 +13,7 @@ Cart validation helpers mirroring ERPNext POS stock checks.
 
 * *Errors*: raises ``ValidationError`` only if parsing fails; stock/price issues are listed in ``errors``.
 """
+
 from __future__ import annotations
 
 import frappe
@@ -23,45 +24,45 @@ _RATE_TOLERANCE = 0.01
 
 
 class ValidationService:
-    """Backend validation prior to invoice save (stock audit)."""
+	"""Backend validation prior to invoice save (stock audit)."""
 
-    @staticmethod
-    def validate_cart_items(
-        items: list,
-        warehouse: str,
-    ) -> dict:
-        """
-        Stock check via native ``get_stock_availability``.
-        """
-        from erpnext.accounts.doctype.pos_invoice.pos_invoice import get_stock_availability
+	@staticmethod
+	def validate_cart_items(
+		items: list,
+		warehouse: str,
+	) -> dict:
+		"""
+		Stock check via native ``get_stock_availability``.
+		"""
+		from erpnext.accounts.doctype.pos_invoice.pos_invoice import get_stock_availability
 
-        errors = []
-        warnings = []
+		errors = []
+		warnings = []
 
-        if not warehouse:
-            errors.append(_("warehouse is required."))
-            return {"valid": False, "errors": errors, "warnings": warnings}
+		if not warehouse:
+			errors.append(_("warehouse is required."))
+			return {"valid": False, "errors": errors, "warnings": warnings}
 
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            item_code = item.get("item_code")
-            qty = flt(item.get("qty", 0))
+		for item in items:
+			if not isinstance(item, dict):
+				continue
+			item_code = item.get("item_code")
+			qty = flt(item.get("qty", 0))
 
-            if not item_code:
-                errors.append(_("Cart row missing item_code."))
-                continue
+			if not item_code:
+				errors.append(_("Cart row missing item_code."))
+				continue
 
-            availability, is_stock_item, allow_negative = get_stock_availability(item_code, warehouse)
-            if is_stock_item and not allow_negative and availability < qty:
-                errors.append(
-                    _(
-                        "Item {0} has insufficient stock ({1} available, {2} requested)"
-                    ).format(item_code, availability, qty)
-                )
+			availability, is_stock_item, allow_negative = get_stock_availability(item_code, warehouse)
+			if is_stock_item and not allow_negative and availability < qty:
+				errors.append(
+					_("Item {0} has insufficient stock ({1} available, {2} requested)").format(
+						item_code, availability, qty
+					)
+				)
 
-        return {
-            "valid": len(errors) == 0,
-            "errors": errors,
-            "warnings": warnings,
-        }
+		return {
+			"valid": len(errors) == 0,
+			"errors": errors,
+			"warnings": warnings,
+		}

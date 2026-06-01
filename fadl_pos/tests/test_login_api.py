@@ -7,8 +7,7 @@ from __future__ import annotations
 import base64
 
 import frappe
-from frappe.auth import CookieManager, LoginManager
-from frappe.auth import validate_api_key_secret
+from frappe.auth import CookieManager, LoginManager, validate_api_key_secret
 from frappe.tests import IntegrationTestCase
 from frappe.utils import set_request
 from frappe.utils.password import update_password
@@ -87,7 +86,9 @@ class TestLoginWithQrAPI(IntegrationTestCase):
 		api_key, api_secret = decoded.split(":", 1)
 		return api_key, api_secret
 
-	def _assert_basic_token_valid_for_user(self, value: str | AuthTokenResponse, user: str) -> tuple[str, str]:
+	def _assert_basic_token_valid_for_user(
+		self, value: str | AuthTokenResponse, user: str
+	) -> tuple[str, str]:
 		api_key, api_secret = self._decode_basic_token(self._basic_header(value))
 		self.assertEqual(frappe.db.get_value("User", user, "api_key"), api_key)
 		validate_api_key_secret(api_key, api_secret)

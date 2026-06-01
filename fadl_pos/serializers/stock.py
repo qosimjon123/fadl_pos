@@ -1,13 +1,14 @@
-from typing import TypedDict, List, Dict, Any, Optional
+from typing import Any, TypedDict
+
 
 class StockResponseSerializer(TypedDict, total=False):
-    item_code: Optional[str]
-    warehouse: Optional[str]
-    actual_qty: Optional[float]
-    stocks: Optional[List[Dict[str, Any]]]
-    warehouses: Optional[List[Dict[str, Any]]]
-    bundle_availability: Optional[float]
-    serial_nos: Optional[List[str]]
-    reserved_serial_nos: Optional[List[str]]
-    status: Optional[bool]
-    message: Optional[str]
+	item_code: str | None
+	warehouse: str | None
+	actual_qty: float | None
+	stocks: list[dict[str, Any]] | None
+	warehouses: list[dict[str, Any]] | None
+	bundle_availability: float | None
+	serial_nos: list[str] | None
+	reserved_serial_nos: list[str] | None
+	status: bool | None
+	message: str | None

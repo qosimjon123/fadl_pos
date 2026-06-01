@@ -17,7 +17,6 @@ from frappe.utils import cint
 from fadl_pos.api.login.pin_cipher import decrypt_with_pin, encrypt_with_pin
 from fadl_pos.serializers.login import AuthTokenResponse, QRGenerateResponse, QRPayloadPlain
 
-
 PIN_RE = re.compile(r"^\d{6}$")
 QR_PAYLOAD_VERSION = 1
 QR_TOKEN_LENGTH = 32
@@ -33,7 +32,7 @@ class BasicToken:
 	api_secret: str
 
 	def as_authorization_header(self) -> str:
-		raw = f"{self.api_key}:{self.api_secret}".encode("utf-8")
+		raw = f"{self.api_key}:{self.api_secret}".encode()
 		encoded = base64.b64encode(raw).decode("ascii")
 		return f"Basic {encoded}"
 
@@ -100,7 +99,7 @@ class TokenAuthService:
 		api_key = payload["api_key"]
 
 		user = frappe.db.get_value("User", {"api_key": api_key, "enabled": 1}, "name")
-		if not user or user in frappe.STANDARD_USERS :
+		if not user or user in frappe.STANDARD_USERS:
 			_auth_error("Invalid PIN or encrypted QR payload")
 
 		doc = frappe.get_doc("User", user)
