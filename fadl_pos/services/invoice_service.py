@@ -1,32 +1,3 @@
-"""
-POS / Sales Invoice sync for fadl_pos.
-
-Creates and updates drafts using native :class:`~erpnext.accounts.doctype.pos_invoice.pos_invoice.POSInvoice`
-or :class:`~erpnext.accounts.doctype.sales_invoice.sales_invoice.SalesInvoice` controllers. Submission,
-cancellation, returns, and tax/totals handling follow ERPNext: :meth:`~frappe.model.document.Document.save`
-runs ``validate()`` on the controller, which applies pricing rules and
-:meth:`~erpnext.controllers.accounts_controller.AccountsController.calculate_taxes_and_totals`.
-
-Before applying client JSON we strip rolled-up amount fields so totals are never taken from the client.
-
-**Contracts (InvoiceService)**
-
-* ``sync(action, data)``
-
-  - *Input*: ``action`` ∈ ``save`` | ``submit`` | ``return`` | ``void`` | ``validate``. ``data`` is a dict
-    (already parsed JSON from the RPC layer).
-
-  - *Success*:
-
-    - ``save``: ``{\"status\": \"success\", \"name\": str, \"invoice\": dict}`` — ``invoice`` is
-      ``doc.as_dict()`` after save.
-    - ``submit``: ``{\"status\": \"success\", \"name\": str, \"message\": str}``.
-    - ``return``: ``{\"status\": \"success\", \"name\": str, \"invoice\": dict}``.
-    - ``void``: ``{\"status\": \"success\", \"name\": str, \"message\": str}``.
-    - ``validate``: ``{\"valid\": bool, \"errors\": list[str], \"warnings\": list[str]}``.
-
-  - *Errors*: Frappe exceptions (typically ``ValidationError``, ``AuthenticationError`` from ``BaseService``).
-"""
 from __future__ import annotations
 
 import frappe

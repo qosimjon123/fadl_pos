@@ -94,26 +94,6 @@ class CustomerService(BaseService):
             "customer": doc.as_dict()
         }
 
-    def set_info(self, data: dict):
-        """
-        Native wrapper: Quickly update specific customer fields (email, mobile, loyalty).
-        """
-        from erpnext.selling.page.point_of_sale.point_of_sale import set_customer_info as native_set_info
-        
-        fieldname = data.get("fieldname")
-        customer = data.get("customer")
-        value = data.get("value", "")
-        
-        if not fieldname or not customer:
-            frappe.throw(_("Fieldname and Customer are required."))
-            
-        native_set_info(fieldname, customer, value)
-        
-        return {
-            "status": "success",
-            "message": _("Updated {0} for {1}").format(fieldname, customer)
-        }
-
     def get_recent_transactions(self, customer: str):
         """
         Native wrapper: Get last 20 transactions for a customer.
