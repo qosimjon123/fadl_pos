@@ -19,8 +19,8 @@ def get(action: str, **kwargs):
 
 	**Output:**
 
-	- ``list``: ``{"customers": [{name, customer_name, email_id, mobile_no, ...}]}``.
-	- ``details``: ``{"customer": {<Customer doc dict>}}``.
+	- ``list``: ``{"customers": [...]}``.
+	- ``details``: ``{"customer": {...}}`` (с ``outstanding_balance``).
 	- ``recent_transactions``: ``{"transactions": [...]}`` from
 	  ``erpnext...point_of_sale.get_customer_recent_transactions``.
 	"""

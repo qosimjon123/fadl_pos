@@ -9,7 +9,7 @@ import frappe
 from frappe import _
 from fadl_pos.meta import CUSTOMER_FIELDS
 from fadl_pos.services._base import BaseService
-from fadl_pos.serializers.customer import serialize_customer
+from fadl_pos.serializers.customer import serialize_customers
 
 class CustomerService(BaseService):
     """Customer documents + native POS helpers."""
@@ -34,32 +34,28 @@ class CustomerService(BaseService):
         else:
             frappe.throw(_("Invalid action: {0}").format(action))
 
-    def get_list(self, search_term: str = "", limit: int = 10):
+    def _query_customers(self, mode: str, search_term: str = "", limit: int = 10, customer: str = ""):
+        filters = {"disabled": 0, "is_frozen": 0}
+        if mode == "details":
+            if not customer:
+                frappe.throw(_("Customer is required"))
+            raw = frappe.db.get_value("Customer", customer, CUSTOMER_FIELDS, as_dict=True)
+            if not raw:
+                frappe.throw(_("Customer {0} not found").format(customer))
+            return raw
         term = (search_term or "").strip()
-        kwargs = {
-            "filters": {"disabled": 0, "is_frozen": 0},
-            "fields": CUSTOMER_FIELDS,
-            "limit": self._cap_limit(limit),
-        }
+        kwargs = {"filters": filters, "fields": CUSTOMER_FIELDS, "limit": self._cap_limit(limit)}
         if term:
             kwargs["or_filters"] = {f: ["like", f"%{term}%"] for f in CUSTOMER_FIELDS}
-        rows = frappe.get_all("Customer", **kwargs)
-        return {"customers": [serialize_customer(r) for r in rows]}
+        return frappe.get_all("Customer", **kwargs)
+
+    def get_list(self, search_term: str = "", limit: int = 10):
+        rows = self._query_customers("list", search_term=search_term, limit=limit)
+        return {"customers": serialize_customers(rows)}
 
     def get_details(self, customer: str):
-        raw = frappe.db.get_value("Customer", customer, CUSTOMER_FIELDS, as_dict=True)
-        if not raw:
-            frappe.throw(_("Customer {0} not found").format(customer))
-        extra = {}
-        if company := frappe.defaults.get_user_default("Company"):
-            try:
-                from erpnext.accounts.utils import get_balance_on
-                extra["outstanding_balance"] = get_balance_on(
-                    party_type="Customer", party=customer, company=company
-                )
-            except Exception:
-                pass
-        return {"customer": serialize_customer(raw, **extra)}
+        raw = self._query_customers("details", customer=customer)
+        return {"customer": serialize_customers([raw])[0]}
 
     def create(self, data: dict):
         """
