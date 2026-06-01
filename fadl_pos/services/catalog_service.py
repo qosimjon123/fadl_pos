@@ -484,7 +484,6 @@ class CatalogService(BaseService):
             "opening_voucher": {
                 "name": opening.name,
                 "period_start_date": opening.period_start_date,
-                "user": opening.user,
                 "user_full_name": frappe.db.get_value(
                     "User", opening.user, "full_name"
                 )

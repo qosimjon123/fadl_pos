@@ -7,13 +7,14 @@ create/update via standard **Customer** documents; ``set_info`` delegates to
 """
 import frappe
 from frappe import _
+from fadl_pos.meta import CUSTOMER_FIELDS
 from fadl_pos.services._base import BaseService
-from fadl_pos.serializers.customer import CustomerResponseSerializer
+from fadl_pos.serializers.customer import serialize_customer
 
 class CustomerService(BaseService):
     """Customer documents + native POS helpers."""
 
-    def get(self, action: str, **kwargs) -> CustomerResponseSerializer:
+    def get(self, action: str, **kwargs):
         if action == "list":
             return self.get_list(**kwargs)
         elif action == "details":
@@ -23,7 +24,7 @@ class CustomerService(BaseService):
         else:
             frappe.throw(_("Invalid action: {0}").format(action))
 
-    def manage(self, action: str, data: dict) -> CustomerResponseSerializer:
+    def manage(self, action: str, data: dict):
         if action == "create":
             return self.create(data)
         elif action == "update":
@@ -33,71 +34,34 @@ class CustomerService(BaseService):
         else:
             frappe.throw(_("Invalid action: {0}").format(action))
 
-    def get_list(self, search_term: str = "", limit: int = 20) -> CustomerResponseSerializer:
-        """
-        Native: Search customers.
-        """
-        filters = []
-        if search_term:
-            filters.append([
-                "Customer", "customer_name", "like", f"%{search_term}%", "or",
-                "Customer", "name", "like", f"%{search_term}%", "or",
-                "Customer", "mobile_no", "like", f"%{search_term}%"
-            ])
-            
-        customers = frappe.get_all(
-            "Customer",
-            filters=filters,
-            fields=["name", "customer_name", "email_id", "mobile_no", "customer_group", "territory"],
-            limit=self._cap_limit(limit)
-        )
-        return {"customers": customers}
+    def get_list(self, search_term: str = "", limit: int = 10):
+        term = (search_term or "").strip()
+        kwargs = {
+            "filters": {"disabled": 0, "is_frozen": 0},
+            "fields": CUSTOMER_FIELDS,
+            "limit": self._cap_limit(limit),
+        }
+        if term:
+            kwargs["or_filters"] = {f: ["like", f"%{term}%"] for f in CUSTOMER_FIELDS}
+        rows = frappe.get_all("Customer", **kwargs)
+        return {"customers": [serialize_customer(r) for r in rows]}
 
-    def get_details(self, customer: str) -> CustomerResponseSerializer:
-        """
-        Native: Get full customer info.
-        """
-        doc = frappe.get_doc("Customer", customer)
-        customer_dict = doc.as_dict()
-
-        # 1. Интеграция программы лояльности
-        if customer_dict.get("loyalty_program"):
+    def get_details(self, customer: str):
+        raw = frappe.db.get_value("Customer", customer, CUSTOMER_FIELDS, as_dict=True)
+        if not raw:
+            frappe.throw(_("Customer {0} not found").format(customer))
+        extra = {}
+        if company := frappe.defaults.get_user_default("Company"):
             try:
-                from erpnext.accounts.doctype.loyalty_program.loyalty_program import get_loyalty_program_details_with_points
-                loyalty_info = get_loyalty_program_details_with_points(
-                    customer, 
-                    customer_dict["loyalty_program"], 
-                    silent=True
+                from erpnext.accounts.utils import get_balance_on
+                extra["outstanding_balance"] = get_balance_on(
+                    party_type="Customer", party=customer, company=company
                 )
-                customer_dict["loyalty_points"] = loyalty_info.get("loyalty_points", 0)
-                customer_dict["conversion_factor"] = loyalty_info.get("conversion_factor", 1)
             except Exception:
-                customer_dict["loyalty_points"] = 0
-                customer_dict["conversion_factor"] = 1
+                pass
+        return {"customer": serialize_customer(raw, **extra)}
 
-        # 2. Эксклюзив: Текущий баланс (долг) клиента
-        try:
-            from erpnext.accounts.utils import get_balance_on
-            # Отрицательный баланс в дебиторке означает, что клиент нам должен (или наоборот, зависит от плана счетов)
-            # Узнаем валюту и баланс
-            company = frappe.defaults.get_user_default("Company")
-            if company:
-                balance = get_balance_on(party_type="Customer", party=customer, company=company)
-                customer_dict["outstanding_balance"] = balance
-        except Exception:
-            pass
-
-        # 3. Эксклюзив: Последние транзакции клиента (для быстрой истории покупок на кассе)
-        # TODO: Пока это нагружает систему, поэтому отключил
-        # try:
-        #     from erpnext.selling.page.point_of_sale.point_of_sale import get_customer_recent_transactions
-        #     customer_dict["recent_transactions"] = get_customer_recent_transactions(customer)
-        # except Exception:
-        #     pass
-
-        return {"customer": customer_dict}
-
-    def create(self, data: dict) -> CustomerResponseSerializer:
+    def create(self, data: dict):
         """
         Create a Customer from the POS API using ERPNext's Customer DocType.
         """
@@ -117,7 +81,7 @@ class CustomerService(BaseService):
             "message": _("Customer {0} created").format(doc.customer_name)
         }
 
-    def update(self, data: dict) -> CustomerResponseSerializer:
+    def update(self, data: dict):
         """
         Update existing customer.
         """
@@ -134,7 +98,7 @@ class CustomerService(BaseService):
             "customer": doc.as_dict()
         }
 
-    def set_info(self, data: dict) -> CustomerResponseSerializer:
+    def set_info(self, data: dict):
         """
         Native wrapper: Quickly update specific customer fields (email, mobile, loyalty).
         """
@@ -154,7 +118,7 @@ class CustomerService(BaseService):
             "message": _("Updated {0} for {1}").format(fieldname, customer)
         }
 
-    def get_recent_transactions(self, customer: str) -> CustomerResponseSerializer:
+    def get_recent_transactions(self, customer: str):
         """
         Native wrapper: Get last 20 transactions for a customer.
         """
