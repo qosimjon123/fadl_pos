@@ -12,7 +12,7 @@ from fadl_pos.services._base import BaseService
 from fadl_pos.services.customer_service import CustomerService
 from fadl_pos.services.session_service import SessionService
 from fadl_pos.services.stock_service import StockService
-from fadl_pos.serializers.catalog import CatalogResponseSerializer
+from fadl_pos.serializers.catalog import CatalogResponseSerializer, serialize_catalog_item
 from erpnext.stock.utils import scan_barcode
 from erpnext.accounts.doctype.pos_invoice.pos_invoice import get_item_group, get_stock_availability
 from frappe.utils.nestedset import get_root_of
@@ -83,6 +83,11 @@ class CatalogService(BaseService):
             "serial_no": serial_no,
             "stock_uom": item_doc.stock_uom,
             "uom": item_doc.stock_uom,
+            "has_serial_no": item_doc.has_serial_no,
+            "has_batch_no": item_doc.has_batch_no,
+            "tax_code": item_doc.get("tax_code"),
+            "max_discount": item_doc.max_discount,
+            "brand": item_doc.brand,
         }
 
         if barcode:
@@ -255,7 +260,7 @@ class CatalogService(BaseService):
             result = self.search_by_term(search_term, warehouse, price_list) or []
             self.filter_result_items(result, pos_profile)
             if result:
-                return result
+                return {"items": [serialize_catalog_item(i) for i in result["items"]]}
 
         if not frappe.db.exists("Item Group", item_group):
             item_group = get_root_of("Item Group")
@@ -276,9 +281,15 @@ class CatalogService(BaseService):
                 item.name AS item_code,
                 item.item_name,
                 item.description,
+                item.item_group,
                 item.stock_uom,
                 item.image AS item_image,
                 item.is_stock_item,
+                item.has_serial_no,
+                item.has_batch_no,
+                item.tax_code,
+                item.max_discount,
+                item.brand,
                 item.sales_uom
             FROM
                 `tabItem` item {bin_join_selection}
@@ -308,7 +319,7 @@ class CatalogService(BaseService):
 
         # return (empty) list if there are no results
         if not items_data:
-            return result
+            return {"items": []}
 
         current_date = frappe.utils.today()
         item_codes = [row.item_code for row in items_data]
@@ -338,7 +349,7 @@ class CatalogService(BaseService):
                 }
             )
 
-        return {"items": result}
+        return {"items": [serialize_catalog_item(i) for i in result]}
 
     def init_empty_invoice_template(self, invoice, pos_profile):
         """
