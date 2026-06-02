@@ -12,7 +12,15 @@ from frappe.utils import flt, nowdate
 from pydantic import TypeAdapter
 
 from fadl_pos.meta import CUSTOMER_FIELDS
-from fadl_pos.schemas import CustomerDetailsQuery, CustomerListQuery, CustomerOut
+from fadl_pos.schemas import (
+	CustomerDetailsOut,
+	CustomerDetailsQuery,
+	CustomerListOut,
+	CustomerListQuery,
+	CustomerManageOut,
+	CustomerOut,
+	CustomerTransactionsOut,
+)
 from fadl_pos.services._base import BaseService
 
 
@@ -95,7 +103,7 @@ class CustomerService(BaseService):
 			for r in rows
 		]
 		customers = self._customer_out_list.dump_python(self._customer_out_list.validate_python(payloads))
-		return {"customers": customers}
+		return CustomerListOut.dump({"customers": customers})
 
 	def get_details(self, customer: str):
 		query = CustomerDetailsQuery.model_validate({"customer": customer})
@@ -106,8 +114,7 @@ class CustomerService(BaseService):
 			**{f: raw.get(f) for f in CUSTOMER_FIELDS},
 			"outstanding_balance": balances.get(raw.get("name", ""), 0.0),
 		}
-		customer_out = CustomerOut.model_validate(payload).model_dump()
-		return {"customer": customer_out}
+		return CustomerDetailsOut.dump({"customer": payload})
 
 	def create(self, data: dict):
 		"""
@@ -123,11 +130,13 @@ class CustomerService(BaseService):
 		doc = frappe.get_doc(data)
 		doc.insert()
 
-		return {
-			"status": "success",
-			"customer": doc.as_dict(),
-			"message": _("Customer {0} created").format(doc.customer_name),
-		}
+		return CustomerManageOut.dump(
+			{
+				"status": "success",
+				"customer": doc.as_dict(),
+				"message": _("Customer {0} created").format(doc.customer_name),
+			}
+		)
 
 	def update(self, data: dict):
 		"""
@@ -141,7 +150,7 @@ class CustomerService(BaseService):
 		doc.update(data)
 		doc.save()
 
-		return {"status": "success", "customer": doc.as_dict()}
+		return CustomerManageOut.dump({"status": "success", "customer": doc.as_dict()})
 
 	def get_recent_transactions(self, customer: str):
 		"""
@@ -150,4 +159,4 @@ class CustomerService(BaseService):
 		from erpnext.selling.page.point_of_sale.point_of_sale import get_customer_recent_transactions
 
 		transactions = get_customer_recent_transactions(customer)
-		return {"transactions": transactions}
+		return CustomerTransactionsOut.dump({"transactions": transactions})

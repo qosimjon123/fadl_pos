@@ -17,7 +17,7 @@ import frappe
 from frappe import _
 from frappe.utils import getdate, today
 
-from fadl_pos.schemas import OffersResponseSerializer
+from fadl_pos.schemas import InvoiceResponseSerializer, OffersResponseSerializer
 from fadl_pos.services._base import BaseService
 from fadl_pos.services.invoice_service import InvoiceService
 
@@ -71,7 +71,7 @@ class OffersService(BaseService):
 				continue
 			active_rules.append(r)
 
-		return {"offers": active_rules}
+		return OffersResponseSerializer.dump({"offers": active_rules})
 
 	def get_coupons(self, customer: str | None = None) -> OffersResponseSerializer:
 		"""
@@ -87,7 +87,7 @@ class OffersService(BaseService):
 			filters=filters,
 			fields=["name", "coupon_code", "pricing_rule", "valid_from", "valid_upto"],
 		)
-		return {"coupons": coupons}
+		return OffersResponseSerializer.dump({"coupons": coupons})
 
 	def apply_offer(self, invoice_name: str, coupon_code: str | None = None):
 		"""
@@ -108,4 +108,4 @@ class OffersService(BaseService):
 			doc.calculate_taxes_and_totals()
 
 		doc.save()
-		return {"status": "success", "invoice": doc.as_dict()}
+		return InvoiceResponseSerializer.dump({"status": "success", "invoice": doc.as_dict()})

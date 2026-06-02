@@ -130,11 +130,13 @@ class InvoiceService(BaseService):
 
 		doc.save()
 
-		return {
-			"status": "success",
-			"name": doc.name,
-			"invoice": doc.as_dict(),
-		}
+		return InvoiceResponseSerializer.dump(
+			{
+				"status": "success",
+				"name": doc.name,
+				"invoice": doc.as_dict(),
+			}
+		)
 
 	def submit(self, data: dict) -> InvoiceResponseSerializer:
 		"""Save then submit via :meth:`~frappe.model.document.Document.submit`."""
@@ -148,11 +150,13 @@ class InvoiceService(BaseService):
 		doc = frappe.get_doc(dt, name)
 		doc.submit()
 
-		return {
-			"status": "success",
-			"name": doc.name,
-			"message": _("Invoice {0} submitted successfully").format(doc.name),
-		}
+		return InvoiceResponseSerializer.dump(
+			{
+				"status": "success",
+				"name": doc.name,
+				"message": _("Invoice {0} submitted successfully").format(doc.name),
+			}
+		)
 
 	def make_return(self, data: dict) -> InvoiceResponseSerializer:
 		"""
@@ -225,11 +229,13 @@ class InvoiceService(BaseService):
 
 		return_doc.insert()
 
-		return {
-			"status": "success",
-			"name": return_doc.name,
-			"invoice": return_doc.as_dict(),
-		}
+		return InvoiceResponseSerializer.dump(
+			{
+				"status": "success",
+				"name": return_doc.name,
+				"invoice": return_doc.as_dict(),
+			}
+		)
 
 	def void(self, data: dict) -> InvoiceResponseSerializer:
 		"""Cancel submitted invoice or delete draft."""
@@ -244,11 +250,13 @@ class InvoiceService(BaseService):
 		elif doc.docstatus == 0:
 			frappe.delete_doc(doc.doctype, name)
 
-		return {
-			"status": "success",
-			"name": name,
-			"message": _("Invoice {0} voided").format(name),
-		}
+		return InvoiceResponseSerializer.dump(
+			{
+				"status": "success",
+				"name": name,
+				"message": _("Invoice {0} voided").format(name),
+			}
+		)
 
 	def validate_cart(self, data: dict):
 		"""Pre-flight stock (and optional price list) checks; does not persist."""

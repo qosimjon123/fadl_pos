@@ -298,17 +298,19 @@ class SessionService(BaseService):
 
 		if active_entry:
 			return [
-				{
-					"pos_profiles": [
-						{
-							"name": active_entry.pos_profile,
-							"status": "Open",
-							"company": active_entry.company,
-							"opening_entry": active_entry.name,
-							"opening_entry_date": active_entry.period_start_date,
-						}
-					]
-				}
+				SessionListResponseSerializer.dump(
+					{
+						"pos_profiles": [
+							{
+								"name": active_entry.pos_profile,
+								"status": "Open",
+								"company": active_entry.company,
+								"opening_entry": active_entry.name,
+								"opening_entry_date": active_entry.period_start_date,
+							}
+						]
+					}
+				)
 			]
 
 		profiles = self._get_profiles(self.user)
@@ -356,7 +358,7 @@ class SessionService(BaseService):
 
 			pos_profiles_response.append(profile_dict)
 
-		return [{"pos_profiles": pos_profiles_response}]
+		return [SessionListResponseSerializer.dump({"pos_profiles": pos_profiles_response})]
 
 	def open_shift(
 		self,
@@ -418,10 +420,12 @@ class SessionService(BaseService):
 		if comment:
 			self._add_timeline_comment(closing_entry, comment)
 
-		return {
-			"status": "success" if closing_entry.status in ["Submitted", "Queued"] else "failed",
-			"is_final": bool(closing_entry.status == "Submitted"),
-			"entry_status": closing_entry.status,
-			"closing_entry": closing_entry.name,
-			"error_message": closing_entry.error_message if closing_entry.status == "Failed" else None,
-		}
+		return CloseShiftResponse.dump(
+			{
+				"status": "success" if closing_entry.status in ["Submitted", "Queued"] else "failed",
+				"is_final": bool(closing_entry.status == "Submitted"),
+				"entry_status": closing_entry.status,
+				"closing_entry": closing_entry.name,
+				"error_message": closing_entry.error_message if closing_entry.status == "Failed" else None,
+			}
+		)

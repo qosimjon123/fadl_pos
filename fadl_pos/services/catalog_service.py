@@ -18,7 +18,7 @@ from frappe.utils import cint, get_datetime
 from frappe.utils.nestedset import get_root_of
 
 from fadl_pos.meta import POS_PROFILE_FIELDS
-from fadl_pos.schemas import CatalogItemOut, CatalogResponseSerializer
+from fadl_pos.schemas import BootPosOut, CatalogOut, CatalogResponseSerializer, TaxTemplateOut
 from fadl_pos.services._base import BaseService
 from fadl_pos.services.customer_service import CustomerService
 from fadl_pos.services.session_service import SessionService
@@ -27,6 +27,10 @@ from fadl_pos.services.stock_service import StockService
 
 class CatalogService(BaseService):
 	"""Thin wrappers around ERPNext POS page controllers where possible."""
+
+	@staticmethod
+	def _catalog_out(items: list) -> dict:
+		return CatalogOut.dump({"items": items})
 
 	def get(self, action: str, **kwargs) -> CatalogResponseSerializer:
 		"""
@@ -156,7 +160,7 @@ class CatalogService(BaseService):
 				}
 			)
 
-		return {"items": [item]}
+		return CatalogService._catalog_out([item])
 
 	def get_conditions(self, search_term):
 		condition = "("
@@ -265,7 +269,7 @@ class CatalogService(BaseService):
 			result = self.search_by_term(search_term, warehouse, price_list) or []
 			self.filter_result_items(result, pos_profile)
 			if result:
-				return {"items": [CatalogItemOut.model_validate(i).model_dump() for i in result["items"]]}
+				return self._catalog_out(result["items"])
 
 		if not frappe.db.exists("Item Group", item_group):
 			item_group = get_root_of("Item Group")
@@ -324,7 +328,7 @@ class CatalogService(BaseService):
 
 		# return (empty) list if there are no results
 		if not items_data:
-			return {"items": []}
+			return self._catalog_out([])
 
 		current_date = frappe.utils.today()
 		item_codes = [row.name for row in items_data]
@@ -355,7 +359,7 @@ class CatalogService(BaseService):
 				}
 			)
 
-		return {"items": [CatalogItemOut.model_validate(i).model_dump() for i in result]}
+		return self._catalog_out(result)
 
 	def init_empty_invoice_template(self, invoice, pos_profile):
 		"""
@@ -480,28 +484,27 @@ class CatalogService(BaseService):
 
 		item_groups_tree = self._build_item_group_tree(pos_profile)
 
-		return {
-			"opening_voucher": {
-				"name": opening.name,
-				"period_start_date": opening.period_start_date,
-				"user_full_name": frappe.db.get_value("User", opening.user, "full_name") or opening.user,
-				"balance_details": balance_details_out,
-			},
-			"pos_profile": pos_out,
-			"item_groups": {
-				"tree": item_groups_tree,
-			},
-			"warehouses": warehouses,
-			"checklists": checklists_payload,
-			"taxes": self._get_taxes(profile_doc.company),
-		}
+		return BootPosOut.dump(
+			{
+				"opening_voucher": {
+					"name": opening.name,
+					"period_start_date": opening.period_start_date,
+					"user_full_name": frappe.db.get_value("User", opening.user, "full_name") or opening.user,
+					"balance_details": balance_details_out,
+				},
+				"pos_profile": pos_out,
+				"item_groups": {"tree": item_groups_tree},
+				"warehouses": warehouses,
+				"checklists": checklists_payload,
+				"taxes": self._get_taxes(profile_doc.company),
+			}
+		)
 
 	def _get_taxes(self, company: str) -> list[dict[str, object]]:
 		"""Шаблоны налогов компании: title + taxes; только если все строки On Net Total."""
 		if not company:
 			return []
 
-		on_net_total = "On Net Total"
 		Template = DocType("Sales Taxes and Charges Template")
 		Tax = DocType("Sales Taxes and Charges")
 
@@ -524,33 +527,34 @@ class CatalogService(BaseService):
 			.orderby(Tax.idx, order=Order.asc)
 		).run(as_dict=True)
 
-		templates_map = defaultdict(lambda: {"taxes": [], "is_valid": True})
-		seen_titles: list[str] = []
+		buckets: dict[str, dict[str, object]] = {}
+		order: list[str] = []
 
 		for row in rows:
-			title = row.title
-			if title not in seen_titles:
-				seen_titles.append(title)
+			key = row.template_name
+			if key not in buckets:
+				buckets[key] = {"title": row.title, "taxes": [], "valid": True}
+				order.append(key)
 			if not row.account_head:
 				continue
-			if row.charge_type != on_net_total:
-				templates_map[title]["is_valid"] = False
+			if row.charge_type != "On Net Total":
+				buckets[key]["valid"] = False
 				continue
-			templates_map[title]["taxes"].append(
-				{
-					"account_head": row.account_head,
-					"charge_type": row.charge_type,
-					"rate": row.rate,
-					"description": row.description,
-					"included_in_print_rate": row.included_in_print_rate or 0,
-					"idx": row.idx,
-				}
-			)
+			if buckets[key]["valid"]:
+				buckets[key]["taxes"].append(
+					{
+						"account_head": row.account_head,
+						"charge_type": row.charge_type,
+						"rate": row.rate,
+						"included_in_print_rate": row.included_in_print_rate or 0,
+						"idx": row.idx,
+					}
+				)
 
 		return [
-			{"title": title, "taxes": templates_map[title]["taxes"]}
-			for title in seen_titles
-			if templates_map[title]["is_valid"]
+			TaxTemplateOut.dump({"title": buckets[key]["title"], "taxes": buckets[key]["taxes"]})
+			for key in order
+			if buckets[key]["valid"]
 		]
 
 	def _build_item_group_tree(self, pos_profile: str) -> list[dict]:

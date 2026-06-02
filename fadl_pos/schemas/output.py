@@ -6,16 +6,12 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class InputSchema(BaseModel):
-	model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-
 class OutputSchema(BaseModel):
 	model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
 
-
-class PaginatedQuery(InputSchema):
-	limit: int = Field(ge=1, le=100)
+	@classmethod
+	def dump(cls, data: Any) -> dict[str, Any]:
+		return cls.model_validate(data).model_dump()
 
 
 class CatalogItemOut(OutputSchema):
@@ -58,37 +54,22 @@ class CustomerOut(OutputSchema):
 	outstanding_balance: float
 
 
-class CustomerListQuery(PaginatedQuery):
-	search_term: str = ""
+class CustomerListOut(OutputSchema):
+	customers: list[CustomerOut]
 
 
-class CustomerDetailsQuery(InputSchema):
-	customer: str = Field(min_length=1)
+class CustomerDetailsOut(OutputSchema):
+	customer: CustomerOut
 
 
-class CustomerManageBody(InputSchema):
-	model_config = ConfigDict(extra="allow", str_strip_whitespace=True)
+class CustomerManageOut(OutputSchema):
+	status: str
+	customer: dict[str, Any] | None = None
+	message: str | None = None
 
 
-class BalanceDetailItem(InputSchema):
-	mode_of_payment: str = Field(min_length=1)
-	opening_amount: float
-
-
-class ClosingReconciliationItem(InputSchema):
-	mode_of_payment: str = Field(min_length=1)
-	closing_amount: float
-
-
-class OpenShiftQuery(InputSchema):
-	pos_profile: str = Field(min_length=1)
-	company: str = Field(min_length=1)
-	comment: str | None = None
-
-
-class CloseShiftQuery(InputSchema):
-	opening_entry_name: str = Field(min_length=1)
-	comment: str | None = None
+class CustomerTransactionsOut(OutputSchema):
+	transactions: list[dict[str, Any]]
 
 
 class InternalPaymentMethod(OutputSchema):
@@ -137,26 +118,10 @@ class CloseShiftOut(OutputSchema):
 	message: str | None = None
 
 
-BalanceDetailItemType = BalanceDetailItem
-ClosingReconciliationItemType = ClosingReconciliationItem
 SessionListResponseSerializer = SessionListOut
 CloseShiftResponse = CloseShiftOut
 PaymentMethodSerializer = PaymentMethodOut
 PosProfileResponseSerializer = PosProfileOut
-
-
-class LoginQuery(InputSchema):
-	usr: str = Field(min_length=1)
-	pwd: str = Field(min_length=1)
-
-
-class QRLoginQuery(InputSchema):
-	encrypted_qr: str = Field(min_length=1)
-	pin_code: str = Field(min_length=1)
-
-
-class QRGenerateQuery(InputSchema):
-	pin_code: str = Field(min_length=1)
 
 
 class AuthTokenOut(OutputSchema):
@@ -177,24 +142,10 @@ AuthTokenResponse = AuthTokenOut
 QRGenerateResponse = QRGenerateOut
 
 
-class CartLineIn(InputSchema):
-	item_code: str = Field(min_length=1)
-	qty: float = Field(ge=0)
-
-
-class CartValidateIn(InputSchema):
-	items: list[CartLineIn]
-	warehouse: str = Field(min_length=1)
-
-
 class CartValidateOut(OutputSchema):
 	valid: bool
 	errors: list[str]
 	warnings: list[str]
-
-
-class InvoiceSyncBody(InputSchema):
-	model_config = ConfigDict(extra="allow", str_strip_whitespace=True)
 
 
 class InvoiceOut(OutputSchema):
@@ -210,12 +161,25 @@ class InvoiceOut(OutputSchema):
 InvoiceResponseSerializer = InvoiceOut
 
 
+class StockBatchRowOut(OutputSchema):
+	item_code: str
+	actual_qty: float
+
+
+class WarehouseRowOut(OutputSchema):
+	name: str
+	warehouse_name: str | None = None
+	actual_qty: float | None = None
+	reserved_qty: float | None = None
+	projected_qty: float | None = None
+
+
 class StockOut(OutputSchema):
 	item_code: str | None = None
 	warehouse: str | None = None
 	actual_qty: float | None = None
-	stocks: list[dict[str, Any]] | None = None
-	warehouses: list[dict[str, Any]] | None = None
+	stocks: list[StockBatchRowOut] | list[dict[str, Any]] | None = None
+	warehouses: list[WarehouseRowOut] | list[dict[str, Any]] | None = None
 	bundle_availability: float | None = None
 	serial_nos: list[str] | None = None
 	reserved_serial_nos: list[str] | None = None
@@ -227,8 +191,8 @@ StockResponseSerializer = StockOut
 
 
 class OffersOut(OutputSchema):
-	offers: list[dict[str, Any]]
-	coupons: list[dict[str, Any]]
+	offers: list[dict[str, Any]] = Field(default_factory=list)
+	coupons: list[dict[str, Any]] = Field(default_factory=list)
 	status: str | None = None
 	message: str | None = None
 
@@ -253,9 +217,8 @@ CouponSerializer = CouponOut
 PaymentUpdateResponse = PaymentUpdateOut
 
 
-class InvoiceListQuery(PaginatedQuery):
-	search_term: str = ""
-	status: str = "Paid"
+class LoyaltyDetailsOut(OutputSchema):
+	model_config = ConfigDict(extra="allow", str_strip_whitespace=True)
 
 
 class InvoiceListOut(OutputSchema):
@@ -263,3 +226,44 @@ class InvoiceListOut(OutputSchema):
 
 
 InvoiceListResponseSerializer = InvoiceListOut
+
+
+class TaxRowOut(OutputSchema):
+	account_head: str
+	charge_type: str
+	rate: float
+	included_in_print_rate: int = 0
+	idx: int | None = None
+
+
+class TaxTemplateOut(OutputSchema):
+	title: str
+	taxes: list[TaxRowOut]
+
+
+class OpeningBalanceOut(OutputSchema):
+	mode_of_payment: str
+	opening_amount: float
+	default: bool = False
+	allow_in_returns: bool = False
+	mop_type: str = "Cash"
+
+
+class OpeningVoucherOut(OutputSchema):
+	name: str
+	period_start_date: datetime | date | None = None
+	user_full_name: str | None = None
+	balance_details: list[OpeningBalanceOut]
+
+
+class ItemGroupsTreeOut(OutputSchema):
+	tree: list[dict[str, Any]]
+
+
+class BootPosOut(OutputSchema):
+	opening_voucher: OpeningVoucherOut
+	pos_profile: dict[str, Any]
+	item_groups: ItemGroupsTreeOut
+	warehouses: list[dict[str, Any]]
+	checklists: Checklists
+	taxes: list[TaxTemplateOut]

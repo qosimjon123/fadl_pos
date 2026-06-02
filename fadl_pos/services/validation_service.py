@@ -41,7 +41,7 @@ class ValidationService:
 
 		if not warehouse:
 			errors.append(_("warehouse is required."))
-			return CartValidateOut(valid=False, errors=errors, warnings=warnings).model_dump()
+			return CartValidateOut.dump({"valid": False, "errors": errors, "warnings": warnings})
 
 		for item in data.items:
 			item_code = item.item_code
@@ -59,8 +59,6 @@ class ValidationService:
 					)
 				)
 
-		return CartValidateOut(
-			valid=len(errors) == 0,
-			errors=errors,
-			warnings=warnings,
-		).model_dump()
+		return CartValidateOut.dump(
+			{"valid": len(errors) == 0, "errors": errors, "warnings": warnings}
+		)

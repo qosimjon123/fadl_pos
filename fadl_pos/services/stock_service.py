@@ -46,7 +46,9 @@ class StockService(BaseService):
 		Native: Get stock availability for a single item in a warehouse.
 		"""
 		actual_qty, _is_stock_item, _is_negative_stock_allowed = native_get_stock(item_code, warehouse)
-		return {"item_code": item_code, "warehouse": warehouse, "actual_qty": actual_qty}
+		return StockResponseSerializer.dump(
+			{"item_code": item_code, "warehouse": warehouse, "actual_qty": actual_qty}
+		)
 
 	def get_batch(self, item_codes, warehouse):
 		"""
@@ -60,7 +62,7 @@ class StockService(BaseService):
 			actual_qty, _, _ = native_get_stock(code, warehouse)
 			final_results.append({"item_code": code, "actual_qty": actual_qty})
 
-		return {"stocks": final_results}
+		return StockResponseSerializer.dump({"stocks": final_results})
 
 	def get_item_by_warehouses(self, item_code, company=None):
 		"""
@@ -73,14 +75,14 @@ class StockService(BaseService):
 		warehouses = frappe.get_all(
 			"Bin", filters=filters, fields=["warehouse", "actual_qty", "reserved_qty", "projected_qty"]
 		)
-		return {"warehouses": warehouses}
+		return StockResponseSerializer.dump({"warehouses": warehouses})
 
 	def get_bundle(self, item_code, warehouse):
 		"""
 		Native POS availability for a Product Bundle or stock item.
 		"""
 		actual_qty, _, _ = native_get_stock(item_code, warehouse)
-		return {"bundle_availability": actual_qty}
+		return StockResponseSerializer.dump({"bundle_availability": actual_qty})
 
 	def auto_fetch_serial(self, qty, item_code, warehouse, batch_nos=None):
 		"""
@@ -95,7 +97,7 @@ class StockService(BaseService):
 			batch_nos=batch_nos,
 			for_doctype="POS Invoice",
 		)
-		return {"serial_nos": serials}
+		return StockResponseSerializer.dump({"serial_nos": serials})
 
 	def get_reserved_serials(self, item_code, warehouse):
 		"""
@@ -105,7 +107,7 @@ class StockService(BaseService):
 
 		filters = {"item_code": item_code, "warehouse": warehouse}
 		serials = get_pos_reserved_serial_nos(filters)
-		return {"reserved_serial_nos": serials}
+		return StockResponseSerializer.dump({"reserved_serial_nos": serials})
 
 	def update_warehouse(self, pos_profile: str, warehouse: str):
 		"""
@@ -118,7 +120,9 @@ class StockService(BaseService):
 		)
 
 		if not has_access and not frappe.has_permission("POS Profile", "write", pos_profile):
-			return {"status": False, "message": _("You don't have permission to update this POS Profile")}
+			return StockResponseSerializer.dump(
+				{"status": False, "message": _("You don't have permission to update this POS Profile")}
+			)
 
 		# Get POS Profile to check company
 		profile_doc = frappe.get_doc("POS Profile", pos_profile)
@@ -129,18 +133,22 @@ class StockService(BaseService):
 
 		# Validate warehouse belongs to same company
 		if warehouse_doc.company != profile_doc.company:
-			return {
-				"status": False,
-				"message": _("Warehouse {0} belongs to {1}, but POS Profile belongs to {2}").format(
-					warehouse, warehouse_doc.company, profile_doc.company
-				),
-			}
+			return StockResponseSerializer.dump(
+				{
+					"status": False,
+					"message": _("Warehouse {0} belongs to {1}, but POS Profile belongs to {2}").format(
+						warehouse, warehouse_doc.company, profile_doc.company
+					),
+				}
+			)
 
 		# Update the POS Profile
 		profile_doc.warehouse = warehouse
 		profile_doc.save()
 
-		return {"status": True, "message": _("Warehouse updated successfully"), "warehouse": warehouse}
+		return StockResponseSerializer.dump(
+			{"status": True, "message": _("Warehouse updated successfully"), "warehouse": warehouse}
+		)
 
 	def get_warehouses(self, company: str) -> list:
 		"""

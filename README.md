@@ -2,7 +2,7 @@
 
 POS for ERPNEXT developed by FadlTech team
 
-API request/response contracts live in `fadl_pos/schemas.py` (Pydantic v2).
+API request/response contracts live in `fadl_pos/schemas/` (Pydantic v2): `input.py` for RPC/query bodies, `output.py` for whitelist responses.
 
 ### Installation
 
