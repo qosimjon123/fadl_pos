@@ -18,7 +18,7 @@ from frappe.utils import cint, get_datetime
 from frappe.utils.nestedset import get_root_of
 
 from fadl_pos.meta import POS_PROFILE_FIELDS
-from fadl_pos.schemas import BootPosOut, CatalogOut, CatalogResponseSerializer, TaxTemplateOut
+from fadl_pos.schemas import BootPosOut, CatalogItemOut, CatalogResponseSerializer, TaxTemplateOut
 from fadl_pos.services._base import BaseService
 from fadl_pos.services.customer_service import CustomerService
 from fadl_pos.services.session_service import SessionService
@@ -27,10 +27,6 @@ from fadl_pos.services.stock_service import StockService
 
 class CatalogService(BaseService):
 	"""Thin wrappers around ERPNext POS page controllers where possible."""
-
-	@staticmethod
-	def _catalog_out(items: list) -> dict:
-		return CatalogOut.dump({"items": items})
 
 	def get(self, action: str, **kwargs) -> CatalogResponseSerializer:
 		"""
@@ -159,8 +155,7 @@ class CatalogService(BaseService):
 					"price_list_rate": p.get("price_list_rate"),
 				}
 			)
-
-		return CatalogService._catalog_out([item])
+		return {CatalogItemOut.dump(item)}
 
 	def get_conditions(self, search_term):
 		condition = "("
@@ -269,7 +264,7 @@ class CatalogService(BaseService):
 			result = self.search_by_term(search_term, warehouse, price_list) or []
 			self.filter_result_items(result, pos_profile)
 			if result:
-				return self._catalog_out(result["items"])
+				return {CatalogItemOut.dump(item) for item in result}
 
 		if not frappe.db.exists("Item Group", item_group):
 			item_group = get_root_of("Item Group")
@@ -328,7 +323,7 @@ class CatalogService(BaseService):
 
 		# return (empty) list if there are no results
 		if not items_data:
-			return self._catalog_out([])
+			return {CatalogItemOut.dump({})}
 
 		current_date = frappe.utils.today()
 		item_codes = [row.name for row in items_data]
@@ -359,7 +354,7 @@ class CatalogService(BaseService):
 				}
 			)
 
-		return self._catalog_out(result)
+		return {CatalogItemOut.dump(item) for item in result}
 
 	def init_empty_invoice_template(self, invoice, pos_profile):
 		"""

@@ -35,14 +35,8 @@ class CatalogItemOut(OutputSchema):
 	brand: str | None = None
 
 
-class CatalogOut(OutputSchema):
-	items: list[CatalogItemOut]
-	brands: list[dict[str, Any]] | None = None
-	item_groups: list[dict[str, Any]] | None = None
-	total_count: int | None = None
 
-
-CatalogResponseSerializer = CatalogOut
+CatalogResponseSerializer = CatalogItemOut
 
 
 class CustomerOut(OutputSchema):

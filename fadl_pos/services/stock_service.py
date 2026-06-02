@@ -77,7 +77,7 @@ class StockService(BaseService):
 		)
 		return StockResponseSerializer.dump({"warehouses": warehouses})
 
-	def get_bundle(self, item_code, warehouse):
+	def  get_bundle(self, item_code, warehouse):
 		"""
 		Native POS availability for a Product Bundle or stock item.
 		"""
