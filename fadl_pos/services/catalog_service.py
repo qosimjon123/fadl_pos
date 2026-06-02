@@ -18,7 +18,7 @@ from frappe.utils import cint, get_datetime
 from frappe.utils.nestedset import get_root_of
 
 from fadl_pos.meta import POS_PROFILE_FIELDS
-from fadl_pos.schemas import BootPosOut, CatalogItemOut, CatalogResponseSerializer, TaxTemplateOut
+from fadl_pos.schemas import BootPosOut, CatalogOut, CatalogResponseSerializer, TaxTemplateOut
 from fadl_pos.services._base import BaseService
 from fadl_pos.services.customer_service import CustomerService
 from fadl_pos.services.session_service import SessionService
@@ -155,7 +155,7 @@ class CatalogService(BaseService):
 					"price_list_rate": p.get("price_list_rate"),
 				}
 			)
-		return {CatalogItemOut.dump(item)}
+		return {"items": [item]}
 
 	def get_conditions(self, search_term):
 		condition = "("
@@ -230,10 +230,31 @@ class CatalogService(BaseService):
 
 	def _resolve_item_uom_price(self, item, item_prices):
 		"""
-		Pick uom, rate, currency, and Item Price.batch_no for catalog list rows.
+		Pick the default selling UOM and its price for a catalog row.
 
-		item_prices are pre-sorted by valid_from desc. batch_no here is the price-rule
-		field on Item Price, not stock/line batch from barcode scan.
+		Mirrors the native ERPNext ``point_of_sale.get_items`` logic
+		(``erpnext/selling/page/point_of_sale/point_of_sale.py`` L228-L256).
+
+		Resolution chain (same as ``get_item_details`` L441-443):
+
+		1. **Base**: ``item_uom = stock_uom``, price = Item Price where uom == stock_uom.
+		2. **Sales UOM override**: if ``sales_uom`` is set and differs from ``stock_uom``,
+		   switch ``item_uom = sales_uom``.  If an Item Price row exists for ``sales_uom``,
+		   use it directly.  Otherwise keep ``stock_uom`` price — the caller will
+		   multiply it by ``conversion_factor`` (see ``get_items``, L343-344).
+		3. **Fallback**: if *no* Item Price matched either UOM, take the first
+		   available row (may have a third UOM like "Box").
+
+		Barcode UOM is handled separately in ``search_by_term``; it overrides
+		``item["uom"]`` before price lookup.
+
+		Args:
+			item: row from the items SQL query (has ``stock_uom``, ``sales_uom``).
+			item_prices: list of Item Price dicts, pre-sorted by ``valid_from`` desc.
+
+		Returns:
+			tuple[str, dict]: ``(resolved_uom, price_row_dict)``.
+			``price_row_dict`` can be ``{}`` when no Item Price exists at all.
 		"""
 		stock_uom_price = next((d for d in item_prices if d.get("uom") == item.stock_uom), {})
 		item_uom = item.stock_uom
@@ -244,6 +265,7 @@ class CatalogService(BaseService):
 			sales_uom_price = next((d for d in item_prices if d.get("uom") == item.sales_uom), {})
 			if sales_uom_price:
 				item_uom_price = sales_uom_price
+			# else: keep stock_uom price — caller multiplies by conversion_factor
 
 		if item_prices and not item_uom_price:
 			item_uom = item_prices[0].get("uom")
@@ -264,7 +286,7 @@ class CatalogService(BaseService):
 			result = self.search_by_term(search_term, warehouse, price_list) or []
 			self.filter_result_items(result, pos_profile)
 			if result:
-				return {CatalogItemOut.dump(item) for item in result}
+				return CatalogOut.dump(result)
 
 		if not frappe.db.exists("Item Group", item_group):
 			item_group = get_root_of("Item Group")
@@ -323,7 +345,7 @@ class CatalogService(BaseService):
 
 		# return (empty) list if there are no results
 		if not items_data:
-			return {CatalogItemOut.dump({})}
+			return CatalogOut.dump({"items": []})
 
 		current_date = frappe.utils.today()
 		item_codes = [row.name for row in items_data]
@@ -354,7 +376,7 @@ class CatalogService(BaseService):
 				}
 			)
 
-		return {CatalogItemOut.dump(item) for item in result}
+		return CatalogOut.dump({"items": result})
 
 	def init_empty_invoice_template(self, invoice, pos_profile):
 		"""
@@ -488,12 +510,39 @@ class CatalogService(BaseService):
 					"balance_details": balance_details_out,
 				},
 				"pos_profile": pos_out,
+				"precision": self._get_precision(),
 				"item_groups": {"tree": item_groups_tree},
 				"warehouses": warehouses,
 				"checklists": checklists_payload,
 				"taxes": self._get_taxes(profile_doc.company),
 			}
 		)
+
+	@staticmethod
+	def _get_precision() -> dict[str, object]:
+		"""
+		Number formatting / rounding settings from System Settings.
+
+		These are global (one per ERPNext site) and rarely change.
+		The frontend must use them for all arithmetic to match server-side
+		``flt()`` / ``rounded()`` results exactly.
+
+		Returns:
+			dict with keys: currency (int), float (int),
+			  rounding_method (str), number_format (str).
+		"""
+		settings = frappe.db.get_value(
+			"System Settings",
+			"System Settings",
+			["currency_precision", "float_precision", "rounding_method", "number_format"],
+			as_dict=True,
+		)
+		return {
+			"currency": int(settings.currency_precision) if settings.currency_precision else 2,
+			"float": int(settings.float_precision) if settings.float_precision else 3,
+			"rounding_method": settings.rounding_method,
+			"number_format": settings.number_format,
+		}
 
 	def _get_taxes(self, company: str) -> list[dict[str, object]]:
 		"""Шаблоны налогов компании: title + taxes; только если все строки On Net Total."""

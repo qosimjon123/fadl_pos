@@ -14,6 +14,12 @@ class OutputSchema(BaseModel):
 		return cls.model_validate(data).model_dump()
 
 
+class CatalogItemUomOut(OutputSchema):
+	uom: str
+	conversion_factor: float
+	price: float | None = None
+
+
 class CatalogItemOut(OutputSchema):
 	name: str
 	item_name: str
@@ -33,10 +39,13 @@ class CatalogItemOut(OutputSchema):
 	tax_code: str | None = None
 	max_discount: float | None = None
 	brand: str | None = None
+	uoms: list[CatalogItemUomOut] = Field(default_factory=list)
 
 
+class CatalogOut(OutputSchema):
+	items: list[CatalogItemOut]
 
-CatalogResponseSerializer = CatalogItemOut
+CatalogResponseSerializer = CatalogOut
 
 
 class CustomerOut(OutputSchema):
@@ -254,9 +263,19 @@ class ItemGroupsTreeOut(OutputSchema):
 	tree: list[dict[str, Any]]
 
 
+class PrecisionOut(OutputSchema):
+	model_config = ConfigDict(extra="ignore", str_strip_whitespace=True, populate_by_name=True)
+
+	currency: int = 2
+	float_precision: int = Field(default=3, alias="float", serialization_alias="float")
+	rounding_method: str | None = None
+	number_format: str | None = None
+
+
 class BootPosOut(OutputSchema):
 	opening_voucher: OpeningVoucherOut
 	pos_profile: dict[str, Any]
+	precision: PrecisionOut
 	item_groups: ItemGroupsTreeOut
 	warehouses: list[dict[str, Any]]
 	checklists: Checklists

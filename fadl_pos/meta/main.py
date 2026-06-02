@@ -50,7 +50,7 @@ POS_PROFILE_FIELDS = {
 	"tax_category": False,  # шаблон налогов на сервере
 	"write_off_account": False,  # GL / consolidation
 	"write_off_cost_center": False,
-	"write_off_limit": False,  # closing, не экран продажи
+	"write_off_limit": True,  # лимит списания: фронт валидирует сумму округления/сдачи
 	# печать только на сервере
 	"company_address": False,
 	"select_print_heading": False,
