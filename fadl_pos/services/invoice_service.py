@@ -3,7 +3,7 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
-from fadl_pos.serializers.invoice import InvoiceResponseSerializer
+from fadl_pos.schemas import CartValidateIn, InvoiceResponseSerializer, InvoiceSyncBody
 from fadl_pos.services._base import BaseService
 
 # Headers / rolled-up totals must be recomputed on the server (see AccountsController.validate).
@@ -254,4 +254,7 @@ class InvoiceService(BaseService):
 		"""Pre-flight stock (and optional price list) checks; does not persist."""
 		from fadl_pos.services.validation_service import ValidationService
 
-		return ValidationService.validate_cart_items(data.get("items", []), data.get("warehouse"))
+		body = CartValidateIn.model_validate(
+			{"items": data.get("items", []), "warehouse": data.get("warehouse") or ""}
+		)
+		return ValidationService.validate_cart_items(body)

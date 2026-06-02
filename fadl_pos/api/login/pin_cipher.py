@@ -12,8 +12,6 @@ from hashlib import pbkdf2_hmac
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from fadl_pos.serializers.login import QRPayloadPlain
-
 MAGIC = b"FP1"
 SALT_LEN = 16
 NONCE_LEN = 12
@@ -24,7 +22,7 @@ def derive_key(pin: str, salt: bytes) -> bytes:
 	return pbkdf2_hmac("sha256", pin.encode("utf-8"), salt, PBKDF2_ITERS, dklen=32)
 
 
-def encrypt_with_pin(pin: str, payload: QRPayloadPlain) -> str:
+def encrypt_with_pin(pin: str, payload: dict[str, object]) -> str:
 	"""Сериализует dict в JSON, шифрует PIN-ом, возвращает url-safe base64 blob."""
 	plaintext = json.dumps(payload, separators=(",", ":"), sort_keys=True)
 	salt = os.urandom(SALT_LEN)

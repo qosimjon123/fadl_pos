@@ -16,7 +16,7 @@ import frappe
 from frappe import _
 from frappe.utils import today
 
-from fadl_pos.serializers.payment import CouponSerializer, PaymentUpdateResponse
+from fadl_pos.schemas import CouponSerializer, PaymentUpdateResponse
 from fadl_pos.services._base import BaseService
 
 

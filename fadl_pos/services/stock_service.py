@@ -15,7 +15,7 @@ from erpnext.accounts.doctype.pos_invoice.pos_invoice import get_stock_availabil
 from frappe import _
 from frappe.utils import cint, flt
 
-from fadl_pos.serializers.stock import StockResponseSerializer
+from fadl_pos.schemas import StockResponseSerializer
 from fadl_pos.services._base import BaseService
 
 

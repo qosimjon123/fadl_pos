@@ -15,7 +15,7 @@ from frappe.model.document import Document
 from frappe.utils import cint
 
 from fadl_pos.api.login.pin_cipher import decrypt_with_pin, encrypt_with_pin
-from fadl_pos.serializers.login import AuthTokenResponse, QRGenerateResponse, QRPayloadPlain
+from fadl_pos.schemas import AuthTokenOut, QRGenerateOut, QRPayloadPlain
 
 PIN_RE = re.compile(r"^\d{6}$")
 QR_PAYLOAD_VERSION = 1
@@ -42,41 +42,43 @@ class TokenAuthService:
 
 	qr_fieldname = "qr_encrypted_data"
 
-	def login(self, login: str | None = None, password: str | None = None) -> AuthTokenResponse:
+	def login(self, login: str | None = None, password: str | None = None) -> dict:
 		user = self._authenticate_password(login, password)
-		return AuthTokenResponse(token=self._ensure_basic_token(user).as_authorization_header())
+		return AuthTokenOut(token=self._ensure_basic_token(user).as_authorization_header()).model_dump()
 
-	def clear_sessions(self) -> AuthTokenResponse:
+	def clear_sessions(self) -> dict:
 		user = self._require_session_user()
 		doc = frappe.get_doc("User", user)
 		token = self._rotate_api_secret(doc)
 		self._set_qr_blob(doc, None)
 		doc.save(ignore_permissions=True)
-		return AuthTokenResponse(token=token.as_authorization_header())
+		return AuthTokenOut(token=token.as_authorization_header()).model_dump()
 
-	def generate_qr(self, pin_code: str | None = None) -> QRGenerateResponse:
+	def generate_qr(self, pin_code: str | None = None) -> dict:
 		pin = self._require_pin(pin_code)
 		user = self._require_session_user()
 		doc = frappe.get_doc("User", user)
 		token = self._ensure_basic_token_for_doc(doc)
-		payload: QRPayloadPlain = {
-			"v": QR_PAYLOAD_VERSION,
-			"api_key": token.api_key,
-			"qr_token": frappe.generate_hash(length=QR_TOKEN_LENGTH),
-		}
+		payload = QRPayloadPlain(
+			v=QR_PAYLOAD_VERSION,
+			api_key=token.api_key,
+			qr_token=frappe.generate_hash(length=QR_TOKEN_LENGTH),
+		)
 		try:
-			encrypted_qr = encrypt_with_pin(pin, payload)
+			encrypted_qr = encrypt_with_pin(pin, payload.model_dump())
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), "fadl_pos generate_qr encrypt")
 			_auth_error("Could not create encrypted QR payload")
 
 		self._set_qr_blob(doc, encrypted_qr)
 		doc.save(ignore_permissions=True)
-		return QRGenerateResponse(encrypted_qr=encrypted_qr)
+		return QRGenerateOut(encrypted_qr=encrypted_qr).model_dump()
 
-	def login_qr(self, encrypted_qr: str | None = None, pin_code: str | None = None) -> AuthTokenResponse:
+	def login_qr(self, encrypted_qr: str | None = None, pin_code: str | None = None) -> dict:
 		_, doc = self.verify_qr_user(encrypted_qr=encrypted_qr, pin_code=pin_code)
-		return AuthTokenResponse(token=self._ensure_basic_token_for_doc(doc).as_authorization_header())
+		return AuthTokenOut(
+			token=self._ensure_basic_token_for_doc(doc).as_authorization_header()
+		).model_dump()
 
 	def verify_qr_user(
 		self,
@@ -96,7 +98,7 @@ class TokenAuthService:
 			_auth_error("Invalid PIN or encrypted QR payload")
 
 		payload = self._parse_qr_payload(raw_payload)
-		api_key = payload["api_key"]
+		api_key = payload.api_key
 
 		user = frappe.db.get_value("User", {"api_key": api_key, "enabled": 1}, "name")
 		if not user or user in frappe.STANDARD_USERS:

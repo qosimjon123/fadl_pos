@@ -58,6 +58,7 @@ ignore = [
     "UP040", # Use type aliases instead of type annotations
     "RUF002", # Cyrillic in docstrings (project locale)
     "RUF003", # Cyrillic in comments (project locale)
+    "RUF012", # Pydantic model list defaults
 ]
 typing-modules = ["frappe.types.DF"]
 

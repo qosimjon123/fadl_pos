@@ -17,7 +17,7 @@ import frappe
 from frappe import _
 from frappe.utils import getdate, today
 
-from fadl_pos.serializers.offers import OffersResponseSerializer
+from fadl_pos.schemas import OffersResponseSerializer
 from fadl_pos.services._base import BaseService
 from fadl_pos.services.invoice_service import InvoiceService
 

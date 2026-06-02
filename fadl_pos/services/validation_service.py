@@ -20,6 +20,8 @@ import frappe
 from frappe import _
 from frappe.utils import flt, today
 
+from fadl_pos.schemas import CartValidateIn, CartValidateOut
+
 _RATE_TOLERANCE = 0.01
 
 
@@ -27,10 +29,7 @@ class ValidationService:
 	"""Backend validation prior to invoice save (stock audit)."""
 
 	@staticmethod
-	def validate_cart_items(
-		items: list,
-		warehouse: str,
-	) -> dict:
+	def validate_cart_items(data: CartValidateIn) -> dict:
 		"""
 		Stock check via native ``get_stock_availability``.
 		"""
@@ -38,16 +37,15 @@ class ValidationService:
 
 		errors = []
 		warnings = []
+		warehouse = data.warehouse
 
 		if not warehouse:
 			errors.append(_("warehouse is required."))
-			return {"valid": False, "errors": errors, "warnings": warnings}
+			return CartValidateOut(valid=False, errors=errors, warnings=warnings).model_dump()
 
-		for item in items:
-			if not isinstance(item, dict):
-				continue
-			item_code = item.get("item_code")
-			qty = flt(item.get("qty", 0))
+		for item in data.items:
+			item_code = item.item_code
+			qty = flt(item.qty)
 
 			if not item_code:
 				errors.append(_("Cart row missing item_code."))
@@ -61,8 +59,8 @@ class ValidationService:
 					)
 				)
 
-		return {
-			"valid": len(errors) == 0,
-			"errors": errors,
-			"warnings": warnings,
-		}
+		return CartValidateOut(
+			valid=len(errors) == 0,
+			errors=errors,
+			warnings=warnings,
+		).model_dump()

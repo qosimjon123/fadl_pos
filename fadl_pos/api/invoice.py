@@ -1,5 +1,7 @@
 import frappe
+from pydantic import ValidationError
 
+from fadl_pos.schemas import InvoiceSyncBody
 from fadl_pos.services.invoice_service import InvoiceService
 
 
@@ -40,5 +42,8 @@ def sync(action: str, data: str):
 	- ``validate``: ``{"valid": bool, "errors": [str, ...], "warnings": [str, ...]}``
 	"""
 	service = InvoiceService()
-	parsed_data = service._parse_json(data)
-	return service.sync(action, parsed_data)
+	try:
+		body = InvoiceSyncBody.model_validate_json(data)
+	except ValidationError as exc:
+		frappe.throw(str(exc.errors()), frappe.ValidationError)
+	return service.sync(action, body.model_dump())

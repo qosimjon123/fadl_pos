@@ -8,14 +8,44 @@ create/update via standard **Customer** documents; ``set_info`` delegates to
 
 import frappe
 from frappe import _
+from frappe.utils import flt, nowdate
+from pydantic import TypeAdapter
 
 from fadl_pos.meta import CUSTOMER_FIELDS
-from fadl_pos.serializers.customer import serialize_customers
+from fadl_pos.schemas import CustomerDetailsQuery, CustomerListQuery, CustomerOut
 from fadl_pos.services._base import BaseService
 
 
 class CustomerService(BaseService):
 	"""Customer documents + native POS helpers."""
+
+	_customer_out_list = TypeAdapter(list[CustomerOut])
+
+	@staticmethod
+	def _fetch_outstanding_balances(parties: list[str], company: str | None = None) -> dict[str, float]:
+		company = company or frappe.defaults.get_user_default("Company")
+		if not parties or not company:
+			return {}
+		from erpnext.accounts.utils import get_currency_precision
+
+		precision = get_currency_precision()
+		rows = frappe.db.sql(
+			"""
+			SELECT party,
+				sum(round(debit_in_account_currency, %(p)s))
+					- sum(round(credit_in_account_currency, %(p)s)) AS balance
+			FROM `tabGL Entry`
+			WHERE is_cancelled = 0
+				AND company = %(company)s
+				AND party_type = 'Customer'
+				AND party IN %(parties)s
+				AND posting_date <= %(date)s
+			GROUP BY party
+			""",
+			{"company": company, "parties": parties, "date": nowdate(), "p": precision},
+			as_dict=True,
+		)
+		return {r.party: flt(r.balance) for r in rows}
 
 	def get(self, action: str, **kwargs):
 		if action == "list":
@@ -47,18 +77,37 @@ class CustomerService(BaseService):
 				frappe.throw(_("Customer {0} not found").format(customer))
 			return raw
 		term = (search_term or "").strip()
-		kwargs = {"filters": filters, "fields": CUSTOMER_FIELDS, "limit": self._cap_limit(limit)}
+		kwargs = {"filters": filters, "fields": CUSTOMER_FIELDS, "limit": limit}
 		if term:
 			kwargs["or_filters"] = {f: ["like", f"%{term}%"] for f in CUSTOMER_FIELDS}
 		return frappe.get_all("Customer", **kwargs)
 
 	def get_list(self, search_term: str = "", limit: int = 10):
-		rows = self._query_customers("list", search_term=search_term, limit=limit)
-		return {"customers": serialize_customers(rows)}
+		query = CustomerListQuery.model_validate({"search_term": search_term, "limit": limit})
+		rows = self._query_customers("list", search_term=query.search_term, limit=query.limit)
+		parties = [r["name"] for r in rows if r.get("name")]
+		balances = self._fetch_outstanding_balances(parties)
+		payloads = [
+			{
+				**{f: r.get(f) for f in CUSTOMER_FIELDS},
+				"outstanding_balance": balances.get(r.get("name", ""), 0.0),
+			}
+			for r in rows
+		]
+		customers = self._customer_out_list.dump_python(self._customer_out_list.validate_python(payloads))
+		return {"customers": customers}
 
 	def get_details(self, customer: str):
-		raw = self._query_customers("details", customer=customer)
-		return {"customer": serialize_customers([raw])[0]}
+		query = CustomerDetailsQuery.model_validate({"customer": customer})
+		raw = self._query_customers("details", customer=query.customer)
+		parties = [raw["name"]] if raw.get("name") else []
+		balances = self._fetch_outstanding_balances(parties)
+		payload = {
+			**{f: raw.get(f) for f in CUSTOMER_FIELDS},
+			"outstanding_balance": balances.get(raw.get("name", ""), 0.0),
+		}
+		customer_out = CustomerOut.model_validate(payload).model_dump()
+		return {"customer": customer_out}
 
 	def create(self, data: dict):
 		"""

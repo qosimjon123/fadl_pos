@@ -14,7 +14,7 @@ from frappe.utils.password import update_password
 
 from fadl_pos.api.login.auth_service import TokenAuthService
 from fadl_pos.api.login.login_endpoints import clear_sessions, generate_qr, login, login_qr
-from fadl_pos.serializers.login import AuthTokenResponse
+from fadl_pos.schemas import AuthTokenOut
 
 
 class TestLoginWithQrAPI(IntegrationTestCase):
@@ -74,7 +74,7 @@ class TestLoginWithQrAPI(IntegrationTestCase):
 		frappe.local.login_manager = LoginManager()
 
 	@staticmethod
-	def _basic_header(payload: str | AuthTokenResponse) -> str:
+	def _basic_header(payload: str | AuthTokenOut | dict) -> str:
 		if isinstance(payload, dict):
 			return payload["token"]
 		return payload
@@ -87,7 +87,7 @@ class TestLoginWithQrAPI(IntegrationTestCase):
 		return api_key, api_secret
 
 	def _assert_basic_token_valid_for_user(
-		self, value: str | AuthTokenResponse, user: str
+		self, value: str | AuthTokenOut | dict, user: str
 	) -> tuple[str, str]:
 		api_key, api_secret = self._decode_basic_token(self._basic_header(value))
 		self.assertEqual(frappe.db.get_value("User", user, "api_key"), api_key)
@@ -128,7 +128,7 @@ class TestLoginWithQrAPI(IntegrationTestCase):
 		frappe.set_user(self.TEST_EMAIL)
 		for bad in ("", "12345", "1234567", "12ab34"):
 			with self.subTest(pin=bad):
-				with self.assertRaises(frappe.AuthenticationError):
+				with self.assertRaises((frappe.AuthenticationError, frappe.ValidationError)):
 					generate_qr(bad)
 
 	def _bootstrap_blob(self, pin: str = "424242") -> str:
@@ -154,7 +154,7 @@ class TestLoginWithQrAPI(IntegrationTestCase):
 	def test_login_qr_rejects_missing_blob(self):
 		frappe.set_user("Guest")
 		self._post_request("/api/v2/method/fadl_pos.api.login.login_endpoints.login_qr")
-		with self.assertRaises(frappe.AuthenticationError):
+		with self.assertRaises((frappe.AuthenticationError, frappe.ValidationError)):
 			login_qr("", "424242")
 
 	def test_login_qr_rejects_tampered_blob(self):

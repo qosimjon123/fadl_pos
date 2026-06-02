@@ -6,7 +6,7 @@ import frappe
 from erpnext.selling.page.point_of_sale.point_of_sale import get_past_order_list
 from frappe import _
 
-from fadl_pos.serializers.invoice_list import InvoiceListResponseSerializer
+from fadl_pos.schemas import InvoiceListQuery, InvoiceListResponseSerializer
 from fadl_pos.services._base import BaseService
 
 
@@ -25,5 +25,8 @@ class InvoiceListService(BaseService):
 		"""
 		Native: Get past order list (POS Invoices + Sales Invoices).
 		"""
-		invoices = get_past_order_list(search_term=search_term, status=status, limit=self._cap_limit(limit))
+		query = InvoiceListQuery.model_validate(
+			{"search_term": search_term, "status": status, "limit": limit}
+		)
+		invoices = get_past_order_list(search_term=query.search_term, status=query.status, limit=query.limit)
 		return {"invoices": invoices}

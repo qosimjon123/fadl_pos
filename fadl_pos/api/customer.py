@@ -1,6 +1,8 @@
 import frappe
+from pydantic import ValidationError
 
 from fadl_pos.api.login.rpc_params import strip_rpc_noise
+from fadl_pos.schemas import CustomerManageBody
 from fadl_pos.services.customer_service import CustomerService
 
 
@@ -55,5 +57,8 @@ def manage(action: str, data: str):
 	- ``set_info``: ``{"status": "success", "message": ...}``.
 	"""
 	service = CustomerService()
-	parsed_data = service._parse_json(data)
-	return service.manage(action, parsed_data)
+	try:
+		body = CustomerManageBody.model_validate_json(data)
+	except ValidationError as exc:
+		frappe.throw(str(exc.errors()), frappe.ValidationError)
+	return service.manage(action, body.model_dump())

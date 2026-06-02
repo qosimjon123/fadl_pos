@@ -6,7 +6,7 @@ from erpnext.selling.page.point_of_sale.point_of_sale import (
 from frappe import _
 from frappe.utils.data import strip_html
 
-from fadl_pos.serializers.session import (
+from fadl_pos.schemas import (
 	BalanceDetailItem,
 	Checklists,
 	CloseShiftResponse,
@@ -34,76 +34,6 @@ class SessionService(BaseService):
 				frappe.ValidationError,
 			)
 		doc.add_comment("Comment", cleaned)
-
-	@staticmethod
-	def _coerce_json_list(raw: object, field_label: str) -> list:
-		if isinstance(raw, str):
-			text = raw.strip()
-			if not text:
-				return []
-			try:
-				parsed = frappe.parse_json(text)
-			except Exception:
-				frappe.throw(_("{0} must be valid JSON").format(field_label), frappe.ValidationError)
-		else:
-			parsed = raw
-		if not isinstance(parsed, list):
-			frappe.throw(_("{0} must be a JSON array").format(field_label), frappe.ValidationError)
-		return parsed
-
-	def parse_balance_details_arg(self, raw: object) -> list[BalanceDetailItem]:
-		"""RPC: balance_details as JSON string or list; returns typed rows for open_shift."""
-		data = self._coerce_json_list(raw, _("balance_details"))
-		out: list[BalanceDetailItem] = []
-		for i, row in enumerate(data):
-			if not isinstance(row, dict):
-				frappe.throw(
-					_("balance_details[{0}] must be an object").format(i),
-					frappe.ValidationError,
-				)
-			mop = row.get("mode_of_payment")
-			amt = row.get("opening_amount")
-			if not isinstance(mop, str) or not mop.strip():
-				frappe.throw(
-					_("balance_details[{0}].mode_of_payment must be text").format(i),
-					frappe.ValidationError,
-				)
-			out.append(
-				BalanceDetailItem(
-					mode_of_payment=mop.strip(),
-					opening_amount=frappe.utils.flt(amt),
-				)
-			)
-		return out
-
-	def parse_closing_data_arg(self, raw: object | None) -> list[ClosingReconciliationItem] | None:
-		"""RPC: optional closing_data JSON string or list for close_shift."""
-		if raw is None:
-			return None
-		if isinstance(raw, str) and not raw.strip():
-			return None
-		data = self._coerce_json_list(raw, _("closing_data"))
-		out: list[ClosingReconciliationItem] = []
-		for i, row in enumerate(data):
-			if not isinstance(row, dict):
-				frappe.throw(
-					_("closing_data[{0}] must be an object").format(i),
-					frappe.ValidationError,
-				)
-			mop = row.get("mode_of_payment")
-			amt = row.get("closing_amount")
-			if not isinstance(mop, str) or not mop.strip():
-				frappe.throw(
-					_("closing_data[{0}].mode_of_payment must be text").format(i),
-					frappe.ValidationError,
-				)
-			out.append(
-				ClosingReconciliationItem(
-					mode_of_payment=mop.strip(),
-					closing_amount=frappe.utils.flt(amt),
-				)
-			)
-		return out
 
 	def _get_profiles(self, user):
 		"""
@@ -257,7 +187,7 @@ class SessionService(BaseService):
 		self, profile_mops: list[InternalPaymentMethod], balance_details: list[BalanceDetailItem]
 	) -> list[dict]:
 		"""Validates Cash requirements and filters out non-Cash methods."""
-		provided_mops = {d.get("mode_of_payment"): d.get("opening_amount") for d in balance_details}
+		provided_mops = {d.mode_of_payment: d.opening_amount for d in balance_details}
 
 		normalized_details: list[dict] = []
 		for pm in profile_mops:
@@ -282,7 +212,7 @@ class SessionService(BaseService):
 		opening_amounts = {
 			d.mode_of_payment: frappe.utils.flt(d.opening_amount) for d in opening_entry.balance_details
 		}
-		actual_map = {p.get("mode_of_payment"): p.get("closing_amount") for p in (closing_data or [])}
+		actual_map = {p.mode_of_payment: p.closing_amount for p in (closing_data or [])}
 
 		# Collect all MOPs to fetch their types in one query
 		all_mops = set(

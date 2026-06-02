@@ -6,9 +6,17 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
+from pydantic import ValidationError
+from pydantic.type_adapter import TypeAdapter
 
-from fadl_pos.api.login.rpc_params import optional_str_param
-from fadl_pos.serializers.session import CloseShiftResponse, SessionListResponseSerializer
+from fadl_pos.schemas import (
+	BalanceDetailItem,
+	CloseShiftQuery,
+	CloseShiftResponse,
+	ClosingReconciliationItem,
+	OpenShiftQuery,
+	SessionListResponseSerializer,
+)
 from fadl_pos.services.session_service import SessionService
 
 
@@ -52,15 +60,27 @@ def open_shift(
 
 	**Output:** Same shape as :func:`get_list` after opening (typically one ``Open`` profile).
 	"""
-	pos_profile = optional_str_param("pos_profile", pos_profile)
-	company = optional_str_param("company", company)
-	comment = optional_str_param("comment", comment)
-	if not pos_profile or not company:
+	try:
+		query = OpenShiftQuery.model_validate(
+			{"pos_profile": pos_profile or "", "company": company or "", "comment": comment}
+		)
+	except ValidationError as exc:
+		frappe.throw(str(exc.errors()), frappe.ValidationError)
+	if not query.pos_profile or not query.company:
 		frappe.throw(_("POS Profile and Company are required to open a shift."))
 
-	service = SessionService()
-	parsed_balance = service.parse_balance_details_arg(balance_details)
-	return service.open_shift(pos_profile, company, parsed_balance, comment=comment)
+	try:
+		if balance_details is None or (isinstance(balance_details, str) and not balance_details.strip()):
+			parsed_balance: list[BalanceDetailItem] = []
+		elif isinstance(balance_details, str):
+			parsed_balance = TypeAdapter(list[BalanceDetailItem]).validate_json(balance_details)
+		else:
+			parsed_balance = TypeAdapter(list[BalanceDetailItem]).validate_python(balance_details)
+	except ValidationError as exc:
+		frappe.throw(str(exc.errors()), frappe.ValidationError)
+	return SessionService().open_shift(
+		query.pos_profile, query.company, parsed_balance, comment=query.comment
+	)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -86,11 +106,22 @@ def close_shift(
 	- ``{"status": "success"|"failed", "is_final": bool, "entry_status": str,
 	  "closing_entry": "<name>", "error_message": str|null}``.
 	"""
-	opening_entry_name = optional_str_param("opening_entry_name", opening_entry_name)
-	comment = optional_str_param("comment", comment)
-	if not opening_entry_name:
+	try:
+		query = CloseShiftQuery.model_validate(
+			{"opening_entry_name": opening_entry_name or "", "comment": comment}
+		)
+	except ValidationError as exc:
+		frappe.throw(str(exc.errors()), frappe.ValidationError)
+	if not query.opening_entry_name:
 		frappe.throw(_("Opening Entry Name is required to close the shift."))
 
-	service = SessionService()
-	parsed_data = service.parse_closing_data_arg(closing_data)
-	return service.close_shift(opening_entry_name, parsed_data, comment=comment)
+	try:
+		if closing_data is None or (isinstance(closing_data, str) and not closing_data.strip()):
+			parsed_data: list[ClosingReconciliationItem] | None = None
+		elif isinstance(closing_data, str):
+			parsed_data = TypeAdapter(list[ClosingReconciliationItem]).validate_json(closing_data)
+		else:
+			parsed_data = TypeAdapter(list[ClosingReconciliationItem]).validate_python(closing_data)
+	except ValidationError as exc:
+		frappe.throw(str(exc.errors()), frappe.ValidationError)
+	return SessionService().close_shift(query.opening_entry_name, parsed_data, comment=query.comment)

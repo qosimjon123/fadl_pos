@@ -18,7 +18,7 @@ from frappe.utils import cint, get_datetime
 from frappe.utils.nestedset import get_root_of
 
 from fadl_pos.meta import POS_PROFILE_FIELDS
-from fadl_pos.serializers.catalog import CatalogResponseSerializer, serialize_catalog_item
+from fadl_pos.schemas import CatalogItemOut, CatalogResponseSerializer
 from fadl_pos.services._base import BaseService
 from fadl_pos.services.customer_service import CustomerService
 from fadl_pos.services.session_service import SessionService
@@ -74,9 +74,9 @@ class CatalogService(BaseService):
 		item = {
 			"barcode": barcode,
 			"batch_no": batch_no,
-			"description": item_doc.description,
+			"description": item_doc.description or "",
 			"is_stock_item": item_doc.is_stock_item,
-			"item_code": item_doc.name,
+			"name": item_doc.name,
 			"item_group": item_doc.item_group,
 			"item_image": item_doc.image,
 			"item_name": item_doc.item_name,
@@ -265,7 +265,7 @@ class CatalogService(BaseService):
 			result = self.search_by_term(search_term, warehouse, price_list) or []
 			self.filter_result_items(result, pos_profile)
 			if result:
-				return {"items": [serialize_catalog_item(i) for i in result["items"]]}
+				return {"items": [CatalogItemOut.model_validate(i).model_dump() for i in result["items"]]}
 
 		if not frappe.db.exists("Item Group", item_group):
 			item_group = get_root_of("Item Group")
@@ -283,7 +283,7 @@ class CatalogService(BaseService):
 		items_data = frappe.db.sql(
 			"""
             SELECT
-                item.name AS item_code,
+                item.name AS name,
                 item.item_name,
                 item.description,
                 item.item_group,
@@ -327,16 +327,16 @@ class CatalogService(BaseService):
 			return {"items": []}
 
 		current_date = frappe.utils.today()
-		item_codes = [row.item_code for row in items_data]
+		item_codes = [row.name for row in items_data]
 		prices_by_item = self._fetch_item_prices_bulk(item_codes, price_list, current_date)
 
 		for item in items_data:
-			item.actual_qty, _, _is_negative_stock_allowed = get_stock_availability(item.item_code, warehouse)
+			item.actual_qty, _, _is_negative_stock_allowed = get_stock_availability(item.name, warehouse)
 
-			item_prices = prices_by_item.get(item.item_code, [])
+			item_prices = prices_by_item.get(item.name, [])
 			item_uom, item_uom_price = self._resolve_item_uom_price(item, item_prices)
 
-			item_conversion_factor = get_conversion_factor(item.item_code, item_uom).get("conversion_factor")
+			item_conversion_factor = get_conversion_factor(item.name, item_uom).get("conversion_factor")
 
 			if item.stock_uom != item_uom:
 				item.actual_qty = item.actual_qty // item_conversion_factor
@@ -347,6 +347,7 @@ class CatalogService(BaseService):
 			result.append(
 				{
 					**item,
+					"description": item.description or "",
 					"price_list_rate": item_uom_price.get("price_list_rate"),
 					"currency": item_uom_price.get("currency"),
 					"uom": item_uom,
@@ -354,7 +355,7 @@ class CatalogService(BaseService):
 				}
 			)
 
-		return {"items": [serialize_catalog_item(i) for i in result]}
+		return {"items": [CatalogItemOut.model_validate(i).model_dump() for i in result]}
 
 	def init_empty_invoice_template(self, invoice, pos_profile):
 		"""
