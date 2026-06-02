@@ -468,7 +468,6 @@ class CatalogService(BaseService):
 				if not row.disabled
 			],
 		}
-
 		default_customer_doc = None
 		if profile_doc.customer:
 			try:
@@ -494,7 +493,65 @@ class CatalogService(BaseService):
 			},
 			"warehouses": warehouses,
 			"checklists": checklists_payload,
+			"taxes": self._get_taxes(profile_doc.company),
 		}
+
+	def _get_taxes(self, company: str) -> list[dict[str, object]]:
+		"""Шаблоны налогов компании: title + taxes; только если все строки On Net Total."""
+		if not company:
+			return []
+
+		on_net_total = "On Net Total"
+		Template = DocType("Sales Taxes and Charges Template")
+		Tax = DocType("Sales Taxes and Charges")
+
+		rows = (
+			frappe.qb.from_(Template)
+			.left_join(Tax)
+			.on((Tax.parent == Template.name) & (Tax.parenttype == "Sales Taxes and Charges Template"))
+			.select(
+				Template.title,
+				Tax.account_head,
+				Tax.charge_type,
+				Tax.rate,
+				Tax.description,
+				Tax.included_in_print_rate,
+				Tax.idx,
+			)
+			.where(Template.company == company)
+			.where(Template.disabled == 0)
+			.orderby(Template.name, order=Order.asc)
+			.orderby(Tax.idx, order=Order.asc)
+		).run(as_dict=True)
+
+		templates_map = defaultdict(lambda: {"taxes": [], "is_valid": True})
+		seen_titles: list[str] = []
+
+		for row in rows:
+			title = row.title
+			if title not in seen_titles:
+				seen_titles.append(title)
+			if not row.account_head:
+				continue
+			if row.charge_type != on_net_total:
+				templates_map[title]["is_valid"] = False
+				continue
+			templates_map[title]["taxes"].append(
+				{
+					"account_head": row.account_head,
+					"charge_type": row.charge_type,
+					"rate": row.rate,
+					"description": row.description,
+					"included_in_print_rate": row.included_in_print_rate or 0,
+					"idx": row.idx,
+				}
+			)
+
+		return [
+			{"title": title, "taxes": templates_map[title]["taxes"]}
+			for title in seen_titles
+			if templates_map[title]["is_valid"]
+		]
 
 	def _build_item_group_tree(self, pos_profile: str) -> list[dict]:
 		"""
