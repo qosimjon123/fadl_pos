@@ -1,25 +1,30 @@
+# Copyright (c) 2026, FadlTech team and contributors
+
+"""Invoice list RPC."""
+
+from __future__ import annotations
+
 import frappe
 
-from fadl_pos.api.login.rpc_params import strip_rpc_noise
+from fadl_pos.api.rpc_boundary import dump_out, validate_in
+from fadl_pos.schemas import InvoiceListHistoryIn, InvoiceListOut
 from fadl_pos.services.invoice_list_service import InvoiceListService
 
 
 @frappe.whitelist()
-def get(action: str, **kwargs):
-	"""
-	Past POS orders using ERPNext consolidated listing (POS + POS-created Sales Invoice).
-
-	**Route:** ``/api/method/fadl_pos.api.invoice_list.get``
-
-	**Input:**
-
-	- ``action`` (str, required): ``history``.
-	- ``history``: optional ``search_term`` (str), ``status`` (str; e.g. ``Paid``, ``Draft``, ``Return``),
-	  ``limit`` (int, capped by service).
-
-	**Output:**
-
-	- ``{"invoices": [...]}`` — each row includes ``doctype`` (``POS Invoice`` or ``Sales Invoice``)
-	  plus native ``get_past_order_list`` fields (``name``, ``grand_total``, ``currency``, ``customer``, …).
-	"""
-	return InvoiceListService().get(action, **strip_rpc_noise(kwargs))
+def history(search_term: str | None = None, status: str | None = None, limit: int | None = None):
+	"""``/api/method/fadl_pos.api.invoice_list.history``"""
+	body = validate_in(
+		InvoiceListHistoryIn,
+		{
+			"search_term": search_term or "",
+			"status": status or "Paid",
+			"limit": limit if limit is not None else 20,
+		},
+	)
+	return dump_out(
+		InvoiceListOut,
+		InvoiceListService().get_history(
+			search_term=body.search_term, status=body.status, limit=body.limit
+		),
+	)

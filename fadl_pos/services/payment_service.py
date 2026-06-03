@@ -16,7 +16,6 @@ import frappe
 from frappe import _
 from frappe.utils import today
 
-from fadl_pos.schemas import CouponSerializer, LoyaltyDetailsOut, PaymentUpdateResponse
 from fadl_pos.services._base import BaseService
 
 
@@ -33,7 +32,7 @@ class PaymentService(BaseService):
 		else:
 			frappe.throw(_("Invalid action: {0}").format(action))
 
-	def update_invoice_payments(self, invoice_name: str, payments: list) -> PaymentUpdateResponse:
+	def update_invoice_payments(self, invoice_name: str, payments: list) -> dict:
 		"""
 		Uses native :meth:`erpnext.accounts.doctype.pos_invoice.pos_invoice.POSInvoice.update_payments`
 		(partial payments / Payment Entry submission). Only **POS Invoice** implements this helper;
@@ -55,16 +54,14 @@ class PaymentService(BaseService):
 		doc = frappe.get_doc("POS Invoice", invoice_name)
 		doc.update_payments(payments)
 
-		return PaymentUpdateResponse.dump(
-			{
-				"status": "success",
-				"name": doc.name,
-				"paid_amount": doc.paid_amount,
-				"outstanding_amount": doc.outstanding_amount,
-			}
-		)
+		return {
+			"status": "success",
+			"name": doc.name,
+			"paid_amount": doc.paid_amount,
+			"outstanding_amount": doc.outstanding_amount,
+		}
 
-	def validate_coupon(self, coupon_code: str) -> CouponSerializer:
+	def validate_coupon(self, coupon_code: str) -> dict:
 		"""
 		Native wrapper: Validate if a coupon code is still valid.
 		"""
@@ -72,13 +69,9 @@ class PaymentService(BaseService):
 
 		try:
 			validate_coupon_code(coupon_code)
-			return CouponSerializer.dump(
-				{"coupon_code": coupon_code, "valid": True, "message": _("Coupon is valid.")}
-			)
+			return {"coupon_code": coupon_code, "valid": True, "message": _("Coupon is valid.")}
 		except frappe.ValidationError as e:
-			return CouponSerializer.dump(
-				{"coupon_code": coupon_code, "valid": False, "message": str(e)}
-			)
+			return {"coupon_code": coupon_code, "valid": False, "message": str(e)}
 
 	def get_loyalty_details(self, customer: str, posting_date: str | None = None) -> dict:
 		"""
@@ -89,5 +82,4 @@ class PaymentService(BaseService):
 		if not posting_date:
 			posting_date = today()
 
-		lp_details = get_loyalty_details(customer, posting_date)
-		return LoyaltyDetailsOut.dump(lp_details or {})
+		return get_loyalty_details(customer, posting_date) or {}

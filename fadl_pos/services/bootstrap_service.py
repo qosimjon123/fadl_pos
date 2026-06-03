@@ -10,7 +10,6 @@ from frappe import _
 from frappe.query_builder import DocType, Order
 
 from fadl_pos.meta import POS_PROFILE_FIELDS
-from fadl_pos.schemas import BootPosOut, TaxTemplateOut
 from fadl_pos.services._base import BaseService
 from fadl_pos.services.customer_service import CustomerService
 from fadl_pos.services.session_service import SessionService
@@ -50,18 +49,22 @@ class BootstrapService(BaseService):
 		opening = frappe.get_doc("POS Opening Entry", open_rows[0].name)
 
 		pay_by_mop = {
-			row["mode_of_payment"]: row for row in SessionService()._fetch_payment_methods([pos_profile])
+			pm["mode_of_payment"]: pm
+			for pm in SessionService()._fetch_payment_methods([pos_profile])
+		}
+		returns_by_mop = {
+			p.mode_of_payment: p.allow_in_returns for p in (profile_doc.payments or [])
 		}
 
 		balance_details_out = []
 		for row in opening.balance_details or []:
-			pr = pay_by_mop.get(row.mode_of_payment) or {}
+			pr = pay_by_mop.get(row.mode_of_payment)
 			balance_details_out.append(
 				{
 					"mode_of_payment": row.mode_of_payment,
 					"opening_amount": row.opening_amount,
-					"default": bool(pr.get("default", 0)),
-					"allow_in_returns": bool(pr.get("allow_in_returns", 0)),
+					"default": bool(pr.get("default")) if pr else False,
+					"allow_in_returns": bool(returns_by_mop.get(row.mode_of_payment, 0)),
 				}
 			)
 
@@ -87,22 +90,20 @@ class BootstrapService(BaseService):
 		pos_out = {field: profile_doc.get(field) for field in POS_PROFILE_FIELDS}
 		pos_out["customer"] = default_customer_doc
 
-		return BootPosOut.dump(
-			{
-				"opening_voucher": {
-					"name": opening.name,
-					"period_start_date": opening.period_start_date,
-					"user_full_name": frappe.db.get_value("User", opening.user, "full_name") or opening.user,
-					"balance_details": balance_details_out,
-				},
-				"pos_profile": pos_out,
-				"precision": self._get_precision(),
-				"item_groups": self._build_item_group_tree(pos_profile),
-				"warehouses": StockService().get_warehouses(profile_doc.company),
-				"checklists": checklists_payload,
-				"taxes": self._get_taxes(profile_doc.company),
-			}
-		)
+		return {
+			"opening_voucher": {
+				"name": opening.name,
+				"period_start_date": opening.period_start_date,
+				"user_full_name": frappe.db.get_value("User", opening.user, "full_name") or opening.user,
+				"balance_details": balance_details_out,
+			},
+			"pos_profile": pos_out,
+			"precision": self._get_precision(),
+			"item_groups": self._build_item_group_tree(pos_profile),
+			"warehouses": StockService().get_warehouses(profile_doc.company),
+			"checklists": checklists_payload,
+			"taxes": self._get_taxes(profile_doc.company),
+		}
 
 	@staticmethod
 	def _get_precision() -> dict[str, object]:
@@ -178,7 +179,7 @@ class BootstrapService(BaseService):
 				)
 
 		return [
-			TaxTemplateOut.dump({"title": buckets[key]["title"], "taxes": buckets[key]["taxes"]})
+			{"title": buckets[key]["title"], "taxes": buckets[key]["taxes"]}
 			for key in order
 			if buckets[key]["valid"]
 		]

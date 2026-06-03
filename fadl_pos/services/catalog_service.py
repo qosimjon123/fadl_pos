@@ -15,7 +15,6 @@ from frappe.query_builder import DocType, Order
 from frappe.utils import cint, get_datetime
 from frappe.utils.nestedset import get_root_of
 
-from fadl_pos.schemas import CatalogOut, CatalogResponseSerializer
 from fadl_pos.services._base import BaseService
 from fadl_pos.services.bootstrap_service import BootstrapService
 
@@ -25,7 +24,7 @@ class CatalogService(BaseService):
 
 	# --- Public API ---
 
-	def get(self, action: str, **kwargs) -> CatalogResponseSerializer:
+	def get(self, action: str, **kwargs) -> dict:
 		"""RPC router: ``items`` | ``boot``."""
 		if action == "items":
 			return self.get_items(**kwargs)
@@ -49,7 +48,7 @@ class CatalogService(BaseService):
 			result = self._search_by_term(search_term, warehouse, price_list) or []
 			self._filter_result_items(result, pos_profile)
 			if result:
-				return CatalogOut.dump(result)
+				return result
 
 		if not frappe.db.exists("Item Group", item_group):
 			item_group = get_root_of("Item Group")
@@ -107,7 +106,7 @@ class CatalogService(BaseService):
 		)
 
 		if not items_data:
-			return CatalogOut.dump({"items": []})
+			return {"items": []}
 
 		current_date = frappe.utils.today()
 		item_codes = [row.name for row in items_data]
@@ -144,7 +143,7 @@ class CatalogService(BaseService):
 				}
 			)
 
-		return CatalogOut.dump({"items": result})
+		return {"items": result}
 
 	# --- Search (barcode / serial / batch / term) ---
 

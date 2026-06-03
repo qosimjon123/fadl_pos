@@ -3,8 +3,8 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
-from fadl_pos.schemas import CartValidateIn, InvoiceResponseSerializer, InvoiceSyncBody
 from fadl_pos.services._base import BaseService
+from fadl_pos.services.validation_service import ValidationService
 
 # Headers / rolled-up totals must be recomputed on the server (see AccountsController.validate).
 _PARENT_TOTAL_KEYS = frozenset(
@@ -73,7 +73,7 @@ def _strip_untrusted_invoice_payload(data: dict) -> dict:
 class InvoiceService(BaseService):
 	"""Create/update/submit POS or Sales invoices using ERPNext document controllers."""
 
-	def sync(self, action: str, data: dict) -> InvoiceResponseSerializer:
+	def sync(self, action: str, data: dict) -> dict:
 		"""Dispatch by ``action``; see module docstring for shapes."""
 		if action == "save":
 			return self.save(data)
@@ -101,7 +101,7 @@ class InvoiceService(BaseService):
 			return frappe.get_doc("Sales Invoice", name)
 		frappe.throw(_("Invoice {0} not found").format(name))
 
-	def save(self, data: dict) -> InvoiceResponseSerializer:
+	def save(self, data: dict) -> dict:
 		"""Create or update a draft POS/Sales invoice; doctype from POS Settings when creating."""
 		sanitized = _strip_untrusted_invoice_payload(dict(data))
 
@@ -130,15 +130,13 @@ class InvoiceService(BaseService):
 
 		doc.save()
 
-		return InvoiceResponseSerializer.dump(
-			{
-				"status": "success",
-				"name": doc.name,
-				"invoice": doc.as_dict(),
-			}
-		)
+		return {
+			"status": "success",
+			"name": doc.name,
+			"invoice": doc.as_dict(),
+		}
 
-	def submit(self, data: dict) -> InvoiceResponseSerializer:
+	def submit(self, data: dict) -> dict:
 		"""Save then submit via :meth:`~frappe.model.document.Document.submit`."""
 		save_res = self.save(data)
 		name = save_res["name"]
@@ -150,15 +148,13 @@ class InvoiceService(BaseService):
 		doc = frappe.get_doc(dt, name)
 		doc.submit()
 
-		return InvoiceResponseSerializer.dump(
-			{
-				"status": "success",
-				"name": doc.name,
-				"message": _("Invoice {0} submitted successfully").format(doc.name),
-			}
-		)
+		return {
+			"status": "success",
+			"name": doc.name,
+			"message": _("Invoice {0} submitted successfully").format(doc.name),
+		}
 
-	def make_return(self, data: dict) -> InvoiceResponseSerializer:
+	def make_return(self, data: dict) -> dict:
 		"""
 		Desk-equivalent return: empty invoice shell + native ``make_sales_return`` with ``target_doc``,
 		then profile/warehouse + ``set_missing_values`` / ``calculate_taxes_and_totals``.
@@ -229,15 +225,13 @@ class InvoiceService(BaseService):
 
 		return_doc.insert()
 
-		return InvoiceResponseSerializer.dump(
-			{
-				"status": "success",
-				"name": return_doc.name,
-				"invoice": return_doc.as_dict(),
-			}
-		)
+		return {
+			"status": "success",
+			"name": return_doc.name,
+			"invoice": return_doc.as_dict(),
+		}
 
-	def void(self, data: dict) -> InvoiceResponseSerializer:
+	def void(self, data: dict) -> dict:
 		"""Cancel submitted invoice or delete draft."""
 		name = data.get("name")
 		if not name:
@@ -250,19 +244,12 @@ class InvoiceService(BaseService):
 		elif doc.docstatus == 0:
 			frappe.delete_doc(doc.doctype, name)
 
-		return InvoiceResponseSerializer.dump(
-			{
-				"status": "success",
-				"name": name,
-				"message": _("Invoice {0} voided").format(name),
-			}
-		)
+		return {
+			"status": "success",
+			"name": name,
+			"message": _("Invoice {0} voided").format(name),
+		}
 
-	def validate_cart(self, data: dict):
-		"""Pre-flight stock (and optional price list) checks; does not persist."""
-		from fadl_pos.services.validation_service import ValidationService
-
-		body = CartValidateIn.model_validate(
-			{"items": data.get("items", []), "warehouse": data.get("warehouse") or ""}
-		)
-		return ValidationService.validate_cart_items(body)
+	def validate_cart(self, data: dict) -> dict:
+		"""Pre-flight stock checks; does not persist."""
+		return ValidationService.validate_cart_items(data)

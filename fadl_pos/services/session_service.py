@@ -4,25 +4,17 @@ from frappe import _
 from frappe.utils import cint
 from frappe.utils.data import strip_html
 
-from fadl_pos.schemas import (
-	BalanceDetailItem,
-	Checklists,
-	CloseShiftResponse,
-	ClosingReconciliationItem,
-	InternalPaymentMethod,
-	SessionListResponseSerializer,
-)
 from fadl_pos.services._base import BaseService
 
 
 
 class SessionService(BaseService):
 	@staticmethod
-	def _required_mop_names(profile_mops: list[InternalPaymentMethod]) -> set[str]:
+	def _required_mop_names(profile_mops: list[dict]) -> set[str]:
 		return {
-			pm.mode_of_payment
+			pm["mode_of_payment"]
 			for pm in profile_mops
-			if cint(pm.custom_required_opening_balance)
+			if cint(pm.get("custom_required_opening_balance"))
 		}
 
 	@staticmethod
@@ -68,7 +60,7 @@ class SessionService(BaseService):
 
 		return user_profiles
 
-	def _fetch_payment_methods(self, profile_names: list[str]) -> list[InternalPaymentMethod]:
+	def _fetch_payment_methods(self, profile_names: list[str]) -> list[dict]:
 		"""Fetch payment methods for multiple POS Profiles in one query."""
 		if not profile_names:
 			return []
@@ -91,9 +83,9 @@ class SessionService(BaseService):
 			{"profile_names": profile_names},
 			as_dict=True,
 		)
-		return [InternalPaymentMethod.model_validate(row) for row in rows]
+		return rows
 
-	def _fetch_checklists(self, profile_names: list[str]) -> dict[str, Checklists]:
+	def _fetch_checklists(self, profile_names: list[str]) -> dict[str, dict]:
 		"""
 		Fetch all checklists for multiple POS Profiles in ONE query, preserving order via idx.
 		"""
@@ -111,7 +103,7 @@ class SessionService(BaseService):
 			order_by="idx asc",
 		)
 
-		checklists_by_profile: dict[str, Checklists] = {}
+		checklists_by_profile: dict[str, dict] = {}
 		for item in items:
 			p_name = item.parent
 			section = "opening" if item.parentfield == "custom_opening_checklist" else "closing"
@@ -131,7 +123,7 @@ class SessionService(BaseService):
 		}
 
 	def _normalize_opening_balances(
-		self, profile_mops: list[InternalPaymentMethod], balance_details: list[BalanceDetailItem]
+		self, profile_mops: list[dict], balance_details: list[dict]
 	) -> list[dict]:
 		"""All profile MOPs on voucher; required rows from client `name`, others zero."""
 		required = self._required_mop_names(profile_mops)
@@ -142,9 +134,10 @@ class SessionService(BaseService):
 
 		provided: dict[str, float] = {}
 		for row in balance_details:
-			if row.name not in required:
+			name = row.get("name")
+			if name not in required:
 				continue
-			provided[row.name] = frappe.utils.flt(row.opening_amount)
+			provided[name] = frappe.utils.flt(row.get("opening_amount"))
 
 		for mop in required:
 			if mop not in provided:
@@ -152,9 +145,9 @@ class SessionService(BaseService):
 
 		return [
 			{
-				"mode_of_payment": pm.mode_of_payment,
-				"opening_amount": provided[pm.mode_of_payment]
-				if pm.mode_of_payment in required
+				"mode_of_payment": pm["mode_of_payment"],
+				"opening_amount": provided[pm["mode_of_payment"]]
+				if pm["mode_of_payment"] in required
 				else 0.0,
 			}
 			for pm in profile_mops
@@ -164,8 +157,8 @@ class SessionService(BaseService):
 		self,
 		closing_entry,
 		opening_entry,
-		closing_data: list[ClosingReconciliationItem] | None,
-		profile_mops: list[InternalPaymentMethod],
+		closing_data: list[dict] | None,
+		profile_mops: list[dict],
 	):
 		"""Reconciliation: required MOPs need client closing_amount; others use expected."""
 		opening_amounts = {
@@ -174,9 +167,10 @@ class SessionService(BaseService):
 		required = self._required_mop_names(profile_mops)
 		actual_map: dict[str, float] = {}
 		for row in closing_data or []:
-			if row.name not in required:
+			name = row.get("name")
+			if name not in required:
 				continue
-			actual_map[row.name] = frappe.utils.flt(row.closing_amount)
+			actual_map[name] = frappe.utils.flt(row.get("closing_amount"))
 
 		existing_mops = []
 		for row in closing_entry.payment_reconciliation:
@@ -231,7 +225,7 @@ class SessionService(BaseService):
 			order_by="period_start_date desc",
 		)
 
-	def get_list(self) -> list[SessionListResponseSerializer]:
+	def get_list(self) -> list[dict]:
 		"""
 		Check for open shifts and fetch POS profile data efficiently.
 		If the user already has an open shift, returns that profile immediately (no payment_methods / checklists queries).
@@ -243,19 +237,17 @@ class SessionService(BaseService):
 
 		if active_entry:
 			return [
-				SessionListResponseSerializer.dump(
-					{
-						"pos_profiles": [
-							{
-								"name": active_entry.pos_profile,
-								"status": "Open",
-								"company": active_entry.company,
-								"opening_entry": active_entry.name,
-								"opening_entry_date": active_entry.period_start_date,
-							}
-						]
-					}
-				)
+				{
+					"pos_profiles": [
+						{
+							"name": active_entry.pos_profile,
+							"status": "Open",
+							"company": active_entry.company,
+							"opening_entry": active_entry.name,
+							"opening_entry_date": active_entry.period_start_date,
+						}
+					]
+				}
 			]
 
 		profiles = self._get_profiles(self.user)
@@ -289,24 +281,24 @@ class SessionService(BaseService):
 
 			payment_methods = []
 			for pm in profile_mops:
-				if not cint(pm.custom_required_opening_balance):
+				if not cint(pm.get("custom_required_opening_balance")):
 					continue
-				payment_methods.append({"name": pm.mode_of_payment})
+				payment_methods.append({"name": pm["mode_of_payment"]})
 
 			profile_dict["checklists"] = [checklists_by_profile.get(p_name, {"opening": [], "closing": []})]
 			profile_dict["payment_methods"] = payment_methods
 
 			pos_profiles_response.append(profile_dict)
 
-		return [SessionListResponseSerializer.dump({"pos_profiles": pos_profiles_response})]
+		return [{"pos_profiles": pos_profiles_response}]
 
 	def open_shift(
 		self,
 		pos_profile: str,
 		company: str,
-		balance_details: list[BalanceDetailItem],
+		balance_details: list[dict],
 		comment: str | None = None,
-	) -> list[SessionListResponseSerializer]:
+	) -> list[dict]:
 		"""Create a new POS Opening Entry (open shift)."""
 		open_entries = frappe.db.get_all(
 			"POS Opening Entry",
@@ -359,9 +351,9 @@ class SessionService(BaseService):
 	def close_shift(
 		self,
 		opening_entry_name: str,
-		closing_data: list[ClosingReconciliationItem] | None = None,
+		closing_data: list[dict] | None = None,
 		comment: str | None = None,
-	) -> CloseShiftResponse:
+	) -> dict:
 		"""
 		Create and submit a POS Closing Entry from an opening entry.
 		"""
@@ -391,12 +383,10 @@ class SessionService(BaseService):
 		if comment:
 			self._add_timeline_comment(closing_entry, comment)
 
-		return CloseShiftResponse.dump(
-			{
-				"status": "success" if closing_entry.status in ["Submitted", "Queued"] else "failed",
-				"is_final": bool(closing_entry.status == "Submitted"),
-				"entry_status": closing_entry.status,
-				"closing_entry": closing_entry.name,
-				"error_message": closing_entry.error_message if closing_entry.status == "Failed" else None,
-			}
-		)
+		return {
+			"status": "success" if closing_entry.status in ["Submitted", "Queued"] else "failed",
+			"is_final": bool(closing_entry.status == "Submitted"),
+			"entry_status": closing_entry.status,
+			"closing_entry": closing_entry.name,
+			"error_message": closing_entry.error_message if closing_entry.status == "Failed" else None,
+		}

@@ -9,25 +9,13 @@ create/update via standard **Customer** documents; ``set_info`` delegates to
 import frappe
 from frappe import _
 from frappe.utils import flt, nowdate
-from pydantic import TypeAdapter
 
 from fadl_pos.meta import CUSTOMER_FIELDS
-from fadl_pos.schemas import (
-	CustomerDetailsOut,
-	CustomerDetailsQuery,
-	CustomerListOut,
-	CustomerListQuery,
-	CustomerManageOut,
-	CustomerOut,
-	CustomerTransactionsOut,
-)
 from fadl_pos.services._base import BaseService
 
 
 class CustomerService(BaseService):
 	"""Customer documents + native POS helpers."""
-
-	_customer_out_list = TypeAdapter(list[CustomerOut])
 
 	@staticmethod
 	def _fetch_outstanding_balances(parties: list[str], company: str | None = None) -> dict[str, float]:
@@ -70,8 +58,6 @@ class CustomerService(BaseService):
 			return self.create(data)
 		elif action == "update":
 			return self.update(data)
-		elif action == "set_info":
-			return self.set_info(data)
 		else:
 			frappe.throw(_("Invalid action: {0}").format(action))
 
@@ -91,36 +77,32 @@ class CustomerService(BaseService):
 		return frappe.get_all("Customer", **kwargs)
 
 	def get_list(self, search_term: str = "", limit: int = 10):
-		query = CustomerListQuery.model_validate({"search_term": search_term, "limit": limit})
-		rows = self._query_customers("list", search_term=query.search_term, limit=query.limit)
+		rows = self._query_customers("list", search_term=search_term, limit=limit)
 		parties = [r["name"] for r in rows if r.get("name")]
 		balances = self._fetch_outstanding_balances(parties)
-		payloads = [
+		customers = [
 			{
 				**{f: r.get(f) for f in CUSTOMER_FIELDS},
 				"outstanding_balance": balances.get(r.get("name", ""), 0.0),
 			}
 			for r in rows
 		]
-		customers = self._customer_out_list.dump_python(self._customer_out_list.validate_python(payloads))
-		return CustomerListOut.dump({"customers": customers})
+		return {"customers": customers}
 
 	def get_details(self, customer: str):
-		query = CustomerDetailsQuery.model_validate({"customer": customer})
-		raw = self._query_customers("details", customer=query.customer)
+		raw = self._query_customers("details", customer=customer)
 		parties = [raw["name"]] if raw.get("name") else []
 		balances = self._fetch_outstanding_balances(parties)
 		payload = {
 			**{f: raw.get(f) for f in CUSTOMER_FIELDS},
 			"outstanding_balance": balances.get(raw.get("name", ""), 0.0),
 		}
-		return CustomerDetailsOut.dump({"customer": payload})
+		return {"customer": payload}
 
 	def create(self, data: dict):
 		"""
 		Create a Customer from the POS API using ERPNext's Customer DocType.
 		"""
-		# Ensure default group/territory if not provided
 		if not data.get("customer_group"):
 			data["customer_group"] = frappe.db.get_default("Customer Group") or "All Customer Groups"
 		if not data.get("territory"):
@@ -130,13 +112,11 @@ class CustomerService(BaseService):
 		doc = frappe.get_doc(data)
 		doc.insert()
 
-		return CustomerManageOut.dump(
-			{
-				"status": "success",
-				"customer": doc.as_dict(),
-				"message": _("Customer {0} created").format(doc.customer_name),
-			}
-		)
+		return {
+			"status": "success",
+			"customer": doc.as_dict(),
+			"message": _("Customer {0} created").format(doc.customer_name),
+		}
 
 	def update(self, data: dict):
 		"""
@@ -150,7 +130,7 @@ class CustomerService(BaseService):
 		doc.update(data)
 		doc.save()
 
-		return CustomerManageOut.dump({"status": "success", "customer": doc.as_dict()})
+		return {"status": "success", "customer": doc.as_dict()}
 
 	def get_recent_transactions(self, customer: str):
 		"""
@@ -159,4 +139,4 @@ class CustomerService(BaseService):
 		from erpnext.selling.page.point_of_sale.point_of_sale import get_customer_recent_transactions
 
 		transactions = get_customer_recent_transactions(customer)
-		return CustomerTransactionsOut.dump({"transactions": transactions})
+		return {"transactions": transactions}

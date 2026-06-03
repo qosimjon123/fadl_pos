@@ -1,44 +1,43 @@
+# Copyright (c) 2026, FadlTech team and contributors
+
+"""Offers and coupons RPC."""
+
+from __future__ import annotations
+
 import frappe
 
-from fadl_pos.api.login.rpc_params import strip_rpc_noise
+from fadl_pos.api.rpc_boundary import dump_out, validate_in
+from fadl_pos.schemas import (
+	ApplyOfferIn,
+	ApplyOfferOut,
+	OffersActiveIn,
+	OffersActiveOut,
+	OffersCouponsIn,
+	OffersCouponsOut,
+)
 from fadl_pos.services.offers_service import OffersService
 
 
 @frappe.whitelist()
-def get(action: str, **kwargs):
-	"""
-	Pricing rules snapshot and coupon code listing.
+def active(pos_profile: str | None = None):
+	"""``/api/method/fadl_pos.api.offers.active``"""
+	body = validate_in(OffersActiveIn, {"pos_profile": pos_profile})
+	return dump_out(OffersActiveOut, OffersService().get_active_offers(pos_profile=body.pos_profile))
 
-	**Route:** ``/api/method/fadl_pos.api.offers.get``
 
-	**Input:**
-
-	- ``action`` (str, required): ``active_offers`` | ``coupons``.
-	- ``active_offers``: optional ``pos_profile`` (currently informational; rules filtered by validity dates).
-	- ``coupons``: optional ``customer`` (reserved for future narrowing).
-
-	**Output:**
-
-	- ``active_offers``: ``{"offers": [{name, title, apply_on, rate_or_discount, ...}]}``.
-	- ``coupons``: ``{"coupons": [{name, coupon_code, pricing_rule, valid_from, valid_upto}, ...]}``.
-	"""
-	return OffersService().get(action, **strip_rpc_noise(kwargs))
+@frappe.whitelist()
+def coupons(customer: str | None = None):
+	"""``/api/method/fadl_pos.api.offers.coupons``"""
+	body = validate_in(OffersCouponsIn, {"customer": customer})
+	return dump_out(OffersCouponsOut, OffersService().get_coupons(customer=body.customer))
 
 
 @frappe.whitelist(methods=["POST"])
-def apply(invoice_name: str, coupon_code: str | None = None):
-	"""
-	Re-run pricing rules on a draft invoice by saving the document (native engine).
-
-	**Route:** ``/api/method/fadl_pos.api.offers.apply`` (POST)
-
-	**Input:**
-
-	- ``invoice_name`` (str, required): existing **POS Invoice** or **Sales Invoice** id.
-	- ``coupon_code`` (str, optional): sets ``coupon_code`` before save.
-
-	**Output:**
-
-	- ``{"status": "success", "invoice": {<full doc dict after save>}``}.
-	"""
-	return OffersService().apply_offer(invoice_name, coupon_code)
+def apply(invoice_name: str | None = None, coupon_code: str | None = None):
+	"""``/api/method/fadl_pos.api.offers.apply``"""
+	body = validate_in(
+		ApplyOfferIn,
+		{"invoice_name": invoice_name or "", "coupon_code": coupon_code},
+	)
+	result = OffersService().apply_offer(body.invoice_name, coupon_code=body.coupon_code)
+	return dump_out(ApplyOfferOut, result)

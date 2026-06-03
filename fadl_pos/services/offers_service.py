@@ -17,7 +17,6 @@ import frappe
 from frappe import _
 from frappe.utils import getdate, today
 
-from fadl_pos.schemas import InvoiceResponseSerializer, OffersResponseSerializer
 from fadl_pos.services._base import BaseService
 from fadl_pos.services.invoice_service import InvoiceService
 
@@ -25,7 +24,7 @@ from fadl_pos.services.invoice_service import InvoiceService
 class OffersService(BaseService):
 	"""Read offers/coupons; apply coupon on draft invoice using ERPNext document controller."""
 
-	def get(self, action: str, **kwargs) -> OffersResponseSerializer:
+	def get(self, action: str, **kwargs) -> dict:
 		if action == "active_offers":
 			return self.get_active_offers(**kwargs)
 		elif action == "coupons":
@@ -33,7 +32,7 @@ class OffersService(BaseService):
 		else:
 			frappe.throw(_("Invalid action: {0}").format(action))
 
-	def get_active_offers(self, pos_profile: str | None = None) -> OffersResponseSerializer:
+	def get_active_offers(self, pos_profile: str | None = None) -> dict:
 		"""
 		Native logic: Get all active Pricing Rules.
 		"""
@@ -71,9 +70,9 @@ class OffersService(BaseService):
 				continue
 			active_rules.append(r)
 
-		return OffersResponseSerializer.dump({"offers": active_rules})
+		return {"offers": active_rules}
 
-	def get_coupons(self, customer: str | None = None) -> OffersResponseSerializer:
+	def get_coupons(self, customer: str | None = None) -> dict:
 		"""
 		Native logic: Get available Coupon Codes.
 		"""
@@ -87,7 +86,7 @@ class OffersService(BaseService):
 			filters=filters,
 			fields=["name", "coupon_code", "pricing_rule", "valid_from", "valid_upto"],
 		)
-		return OffersResponseSerializer.dump({"coupons": coupons})
+		return {"coupons": coupons}
 
 	def apply_offer(self, invoice_name: str, coupon_code: str | None = None):
 		"""
@@ -108,4 +107,4 @@ class OffersService(BaseService):
 			doc.calculate_taxes_and_totals()
 
 		doc.save()
-		return InvoiceResponseSerializer.dump({"status": "success", "invoice": doc.as_dict()})
+		return {"status": "success", "invoice": doc.as_dict()}

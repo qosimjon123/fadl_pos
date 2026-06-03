@@ -282,3 +282,79 @@ class BootPosOut(OutputSchema):
 	warehouses: list[dict[str, Any]]
 	checklists: Checklists
 	taxes: list[TaxTemplateOut]
+
+
+# --- Session envelope (get_list / open_shift return shape) ---
+SessionListEnvelopeOut = SessionListOut
+
+
+# --- Stock (per-endpoint) ---
+class StockSingleOut(OutputSchema):
+	item_code: str
+	warehouse: str
+	actual_qty: float
+
+
+class StockBatchOut(OutputSchema):
+	stocks: list[StockBatchRowOut]
+
+
+class StockWarehousesListOut(OutputSchema):
+	warehouses: list[WarehouseRowOut] | list[dict[str, Any]]
+
+
+class StockBundleOut(OutputSchema):
+	bundle_availability: float
+
+
+class StockAutoSerialOut(OutputSchema):
+	serial_nos: list[str]
+
+
+class StockReservedSerialsOut(OutputSchema):
+	reserved_serial_nos: list[str]
+
+
+class StockUpdateWarehouseOut(OutputSchema):
+	status: bool
+	message: str
+	warehouse: str | None = None
+
+
+# --- Offers (per-endpoint) ---
+class OffersActiveOut(OutputSchema):
+	offers: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class OffersCouponsOut(OutputSchema):
+	coupons: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ApplyOfferOut(OutputSchema):
+	status: str
+	invoice: dict[str, Any] | None = None
+
+
+# --- Invoice (per-endpoint) ---
+class InvoiceSaveOut(OutputSchema):
+	status: str
+	name: str
+	invoice: dict[str, Any] | None = None
+
+
+class InvoiceSubmitOut(OutputSchema):
+	status: str
+	name: str
+	message: str | None = None
+
+
+class InvoiceReturnOut(OutputSchema):
+	status: str
+	name: str
+	invoice: dict[str, Any] | None = None
+
+
+class InvoiceVoidOut(OutputSchema):
+	status: str
+	name: str
+	message: str | None = None

@@ -9,7 +9,6 @@ from types import SimpleNamespace
 
 import frappe
 
-from fadl_pos.schemas import BalanceDetailItem, ClosingReconciliationItem, InternalPaymentMethod
 from fadl_pos.services.session_service import SessionService
 
 
@@ -18,16 +17,14 @@ def _pm(
 	*,
 	required: int = 0,
 	pos_profile: str = "POS-1",
-) -> InternalPaymentMethod:
-	return InternalPaymentMethod.model_validate(
-		{
-			"pos_profile": pos_profile,
-			"mode_of_payment": name,
-			"default": 0,
-			"custom_required_opening_balance": required,
-			"idx": 0,
-		}
-	)
+) -> dict:
+	return {
+		"pos_profile": pos_profile,
+		"mode_of_payment": name,
+		"default": 0,
+		"custom_required_opening_balance": required,
+		"idx": 0,
+	}
 
 
 class TestNormalizeOpeningBalances(unittest.TestCase):
@@ -36,7 +33,7 @@ class TestNormalizeOpeningBalances(unittest.TestCase):
 
 	def test_all_profile_mops_with_zero_for_non_required(self):
 		profile_mops = [_pm("Cash AED", required=1), _pm("Card", required=0)]
-		balance = [BalanceDetailItem(name="Cash AED", opening_amount=500)]
+		balance = [{"name": "Cash AED", "opening_amount": 500}]
 		result = self.svc._normalize_opening_balances(profile_mops, balance)
 		self.assertEqual(len(result), 2)
 		by_mop = {r["mode_of_payment"]: r["opening_amount"] for r in result}
@@ -46,8 +43,8 @@ class TestNormalizeOpeningBalances(unittest.TestCase):
 	def test_extra_client_row_ignored(self):
 		profile_mops = [_pm("Cash AED", required=1)]
 		balance = [
-			BalanceDetailItem(name="Cash AED", opening_amount=100),
-			BalanceDetailItem(name="Hacker MOP", opening_amount=999),
+			{"name": "Cash AED", "opening_amount": 100},
+			{"name": "Hacker MOP", "opening_amount": 999},
 		]
 		result = self.svc._normalize_opening_balances(profile_mops, balance)
 		self.assertEqual(result[0]["opening_amount"], 100.0)
@@ -55,8 +52,8 @@ class TestNormalizeOpeningBalances(unittest.TestCase):
 	def test_non_required_client_amount_ignored(self):
 		profile_mops = [_pm("Cash AED", required=1), _pm("Card", required=0)]
 		balance = [
-			BalanceDetailItem(name="Cash AED", opening_amount=100),
-			BalanceDetailItem(name="Card", opening_amount=999),
+			{"name": "Cash AED", "opening_amount": 100},
+			{"name": "Card", "opening_amount": 999},
 		]
 		result = self.svc._normalize_opening_balances(profile_mops, balance)
 		by_mop = {r["mode_of_payment"]: r["opening_amount"] for r in result}
@@ -71,7 +68,7 @@ class TestNormalizeOpeningBalances(unittest.TestCase):
 		profile_mops = [_pm("Card", required=0)]
 		with self.assertRaises(frappe.ValidationError):
 			self.svc._normalize_opening_balances(
-				profile_mops, [BalanceDetailItem(name="Card", opening_amount=0)]
+				profile_mops, [{"name": "Card", "opening_amount": 0}]
 			)
 
 
@@ -108,7 +105,7 @@ class TestPrepareClosingReconciliation(unittest.TestCase):
 		cash_row = self._recon_row("Cash AED", expected=50.0)
 		card_row = self._recon_row("Card", expected=20.0)
 		closing_entry = SimpleNamespace(payment_reconciliation=[cash_row, card_row], append=lambda *a, **k: None)
-		closing_data = [ClosingReconciliationItem(name="Cash AED", closing_amount=480)]
+		closing_data = [{"name": "Cash AED", "closing_amount": 480}]
 
 		self.svc._prepare_closing_reconciliation(
 			closing_entry, opening, closing_data, profile_mops

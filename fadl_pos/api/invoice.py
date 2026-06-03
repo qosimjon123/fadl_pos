@@ -1,49 +1,69 @@
+# Copyright (c) 2026, FadlTech team and contributors
+
+"""Invoice sync RPC — one whitelist per operation."""
+
+from __future__ import annotations
+
 import frappe
 from pydantic import ValidationError
 
-from fadl_pos.schemas import InvoiceSyncBody
+from fadl_pos.api.rpc_boundary import dump_out, raise_validation_error, validate_in
+from fadl_pos.schemas import (
+	CartValidateIn,
+	CartValidateOut,
+	InvoiceReturnIn,
+	InvoiceReturnOut,
+	InvoiceSaveIn,
+	InvoiceSaveOut,
+	InvoiceSubmitIn,
+	InvoiceSubmitOut,
+	InvoiceSyncBody,
+	InvoiceValidateCartIn,
+	InvoiceVoidIn,
+	InvoiceVoidOut,
+)
 from fadl_pos.services.invoice_service import InvoiceService
+from fadl_pos.services.validation_service import ValidationService
+
+
+def _parse_invoice_data(data: str) -> dict:
+	try:
+		return InvoiceSyncBody.model_validate_json(data).model_dump()
+	except ValidationError as exc:
+		raise_validation_error(exc)
+		raise AssertionError("unreachable")
 
 
 @frappe.whitelist(methods=["POST"])
-def sync(action: str, data: str):
-	"""
-	Draft/submit/cancel POS or Sales invoices and validate cart stock (Desk POS parity where noted).
+def save(data: str | None = None):
+	body = validate_in(InvoiceSaveIn, {"data": data or ""})
+	return dump_out(InvoiceSaveOut, InvoiceService().save(_parse_invoice_data(body.data)))
 
-	**Route:** ``/api/method/fadl_pos.api.invoice.sync`` (POST)
 
-	**Input (form / JSON body):**
+@frappe.whitelist(methods=["POST"])
+def submit(data: str | None = None):
+	body = validate_in(InvoiceSubmitIn, {"data": data or ""})
+	return dump_out(InvoiceSubmitOut, InvoiceService().submit(_parse_invoice_data(body.data)))
 
-	- ``action`` (str, required): one of ``save``, ``submit``, ``return``, ``void``, ``validate``.
-	- ``data`` (str, required): JSON object (stringified for Frappe RPC) with action-specific fields.
 
-	``data`` shapes by ``action``:
+@frappe.whitelist(methods=["POST"])
+def return_invoice(data: str | None = None):
+	body = validate_in(InvoiceReturnIn, {"data": data or ""})
+	return dump_out(InvoiceReturnOut, InvoiceService().make_return(_parse_invoice_data(body.data)))
 
-	- ``save`` / ``submit``: invoice fields for :class:`frappe.model.document.Document` construction
-	  or ``name`` + partial fields for update. Doctype is taken from **POS Settings → invoice_type**
-	  (``POS Invoice`` or ``Sales Invoice``) when ``name`` is omitted. Typical keys: ``customer``,
-	  ``company``, ``items`` (child rows), ``payments``, ``taxes``, ``pos_profile``, etc.
-	- ``return``: ``return_against`` (str, required) — submitted **POS Invoice** or **Sales Invoice**;
-	  same flow as Desk (blank ``target_doc`` + whitelisted ``make_sales_return``). Optional:
-	  ``company``, ``pos_profile``, ``set_warehouse`` to mirror session POS profile / warehouse after
-	  mapping. Partial quantities: adjust lines on the returned draft (e.g. ``save``) before ``submit``.
-	- ``void``: ``name`` (str, required) — draft deleted; submitted cancelled via ``doc.cancel()``.
-	- ``validate``: ``items`` (list, required) — cart rows with at least ``item_code``, ``qty``;
-	  ``warehouse`` (str, required). Optional ``price_list`` or ``pos_profile`` (uses profile's selling
-	  price list) to add rate warnings vs **Item Price**.
 
-	**Output:** ``dict`` — one of:
+@frappe.whitelist(methods=["POST"])
+def void(data: str | None = None):
+	body = validate_in(InvoiceVoidIn, {"data": data or ""})
+	return dump_out(InvoiceVoidOut, InvoiceService().void(_parse_invoice_data(body.data)))
 
-	- ``save``: ``{"status": "success", "name": "<invoice>", "invoice": {<full doc dict>}}``
-	- ``submit``: ``{"status": "success", "name": "<invoice>", "message": "<translated string>"}``
-	- ``return``: ``{"status": "success", "name": "<new invoice>", "invoice": {<full doc dict>}}``
-	  (Desk-style ``target_doc`` shell + ``pos_invoice.make_sales_return`` or ``sales_invoice.make_sales_return``).
-	- ``void``: ``{"status": "success", "name": "<invoice>", "message": ...}``
-	- ``validate``: ``{"valid": bool, "errors": [str, ...], "warnings": [str, ...]}``
-	"""
-	service = InvoiceService()
-	try:
-		body = InvoiceSyncBody.model_validate_json(data)
-	except ValidationError as exc:
-		frappe.throw(str(exc.errors()), frappe.ValidationError)
-	return service.sync(action, body.model_dump())
+
+@frappe.whitelist(methods=["POST"])
+def validate_cart(data: str | None = None):
+	body = validate_in(InvoiceValidateCartIn, {"data": data or ""})
+	payload = _parse_invoice_data(body.data)
+	cart = validate_in(
+		CartValidateIn,
+		{"items": payload.get("items", []), "warehouse": payload.get("warehouse") or ""},
+	)
+	return dump_out(CartValidateOut, ValidationService.validate_cart_items(cart.model_dump()))

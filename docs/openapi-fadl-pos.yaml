@@ -12,7 +12,10 @@ info:
 
     **Модули:**
     - Логин и QR-токен (гостевые `login` / `login_qr` с rate limit).
-    - Смена POS (`get_list`, `open_shift`, `close_shift`) — только с валидным `Authorization`. Обязательные суммы задаются полем **Required Opening Balance** на POS Profile; см. тег **POS session**.
+    - Смена POS (`session.get_list`, `open_shift`, `close_shift`).
+    - Остальные RPC — **отдельный method на операцию** (без `action`). Таблица миграции: `docs/SPA_RPC_MIGRATION.md`.
+
+    Входные поля валидируются Pydantic (`extra=forbid`); лишние ключи → 417.
 
     Секреты и внутренние поля QR в ответах не раскрываются.
   version: 1.0.0
