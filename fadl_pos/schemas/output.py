@@ -25,6 +25,7 @@ class CatalogItemOut(OutputSchema):
 	item_name: str
 	description: str
 	item_group: str
+	stock_uom: str
 	uom: str
 	item_image: str | None = None
 	is_stock_item: bool

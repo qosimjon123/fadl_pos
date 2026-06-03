@@ -1,51 +1,158 @@
 """
-Item catalog: native ``point_of_sale`` search/list/scan plus SPA ``boot`` payload.
+Item catalog: ERPNext POS search/list/scan wrappers.
 
-See :meth:`CatalogService.boot_pos` for the large composite response (opening voucher, profile, item group
-trees, warehouses, checklists).
+SPA boot payload: :class:`fadl_pos.services.bootstrap_service.BootstrapService`.
 """
 
 from collections import defaultdict
 
 import frappe
 from erpnext.accounts.doctype.pos_invoice.pos_invoice import get_item_group, get_stock_availability
-from erpnext.accounts.doctype.pos_profile.pos_profile import get_child_nodes, get_item_groups
-from erpnext.stock.get_item_details import get_conversion_factor
+from erpnext.accounts.doctype.pos_profile.pos_profile import get_item_groups
 from erpnext.stock.utils import scan_barcode
 from frappe import _
 from frappe.query_builder import DocType, Order
 from frappe.utils import cint, get_datetime
 from frappe.utils.nestedset import get_root_of
 
-from fadl_pos.meta import POS_PROFILE_FIELDS
-from fadl_pos.schemas import BootPosOut, CatalogOut, CatalogResponseSerializer, TaxTemplateOut
+from fadl_pos.schemas import CatalogOut, CatalogResponseSerializer
 from fadl_pos.services._base import BaseService
-from fadl_pos.services.customer_service import CustomerService
-from fadl_pos.services.session_service import SessionService
-from fadl_pos.services.stock_service import StockService
+from fadl_pos.services.bootstrap_service import BootstrapService
 
 
 class CatalogService(BaseService):
-	"""Thin wrappers around ERPNext POS page controllers where possible."""
+	"""Catalog list/search; delegates ``boot`` to :class:`BootstrapService`."""
+
+	# --- Public API ---
 
 	def get(self, action: str, **kwargs) -> CatalogResponseSerializer:
-		"""
-		Unified entry point for catalog actions.
-		"""
+		"""RPC router: ``items`` | ``boot``."""
 		if action == "items":
 			return self.get_items(**kwargs)
-		elif action == "boot":
+		if action == "boot":
 			pos_profile = (kwargs.get("pos_profile") or "").strip()
 			if not pos_profile:
 				frappe.throw(_("pos_profile is required for boot"))
-			return self.boot_pos(pos_profile)
-		else:
-			frappe.throw(_("Invalid action: {0}").format(action))
+			return BootstrapService().boot(pos_profile)
+		frappe.throw(_("Invalid action: {0}").format(action))
 
-	def search_for_serial_or_batch_or_barcode_number(self, search_value: str) -> dict[str, str | None]:
+	def get_items(
+		self, start, page_length=15, price_list=None, item_group=None, pos_profile=None, search_term=""
+	):
+		warehouse, hide_unavailable_items = frappe.db.get_value(
+			"POS Profile", pos_profile, ["warehouse", "hide_unavailable_items"]
+		)
+
+		result = []
+
+		if search_term:
+			result = self._search_by_term(search_term, warehouse, price_list) or []
+			self._filter_result_items(result, pos_profile)
+			if result:
+				return CatalogOut.dump(result)
+
+		if not frappe.db.exists("Item Group", item_group):
+			item_group = get_root_of("Item Group")
+
+		condition = self._get_items_search_condition(search_term)
+		condition += self._get_item_group_sql_filter(pos_profile)
+
+		lft, rgt = frappe.db.get_value("Item Group", item_group, ["lft", "rgt"])
+
+		bin_join_selection, bin_join_condition = "", ""
+		if hide_unavailable_items:
+			bin_join_selection = "LEFT JOIN `tabBin` bin ON bin.item_code = item.name"
+			bin_join_condition = "AND (item.is_stock_item = 0 OR (item.is_stock_item = 1 AND bin.warehouse = %(warehouse)s AND bin.actual_qty > 0))"
+
+		items_data = frappe.db.sql(
+			"""
+            SELECT
+                item.name AS name,
+                item.item_name,
+                item.description,
+                item.item_group,
+                item.stock_uom,
+                item.image AS item_image,
+                item.is_stock_item,
+                item.has_serial_no,
+                item.has_batch_no,
+                item.tax_code,
+                item.max_discount,
+                item.brand,
+                item.sales_uom
+            FROM
+                `tabItem` item {bin_join_selection}
+            WHERE
+                item.disabled = 0
+                AND item.has_variants = 0
+                AND item.is_sales_item = 1
+                AND item.is_fixed_asset = 0
+                AND item.item_group in (SELECT name FROM `tabItem Group` WHERE lft >= {lft} AND rgt <= {rgt})
+                AND {condition}
+                {bin_join_condition}
+            ORDER BY
+                item.name asc
+            LIMIT
+                {page_length} offset {start}""".format(
+				start=cint(start),
+				page_length=cint(page_length),
+				lft=cint(lft),
+				rgt=cint(rgt),
+				condition=condition,
+				bin_join_selection=bin_join_selection,
+				bin_join_condition=bin_join_condition,
+			),
+			{"warehouse": warehouse},
+			as_dict=1,
+		)
+
+		if not items_data:
+			return CatalogOut.dump({"items": []})
+
+		current_date = frappe.utils.today()
+		item_codes = [row.name for row in items_data]
+		prices_by_item = self._fetch_item_prices_bulk(item_codes, price_list, current_date)
+		uoms_by_item = self._fetch_uom_conversions_bulk(item_codes)
+
+		for item in items_data:
+			item.actual_qty, _, _is_negative_stock_allowed = get_stock_availability(item.name, warehouse)
+
+			item_prices = prices_by_item.get(item.name, [])
+			item_uom, item_uom_price = self._resolve_item_uom_price(item, item_prices)
+
+			item_conversion_factor = self._conversion_factor_from_map(
+				item.name, item_uom, item.stock_uom, uoms_by_item
+			)
+
+			if item.stock_uom != item_uom:
+				item.actual_qty = item.actual_qty // item_conversion_factor
+
+			if item_uom_price and item_uom != item_uom_price.get("uom"):
+				item_uom_price.price_list_rate = item_uom_price.price_list_rate * item_conversion_factor
+
+			result.append(
+				{
+					**item,
+					"description": item.description or "",
+					"price_list_rate": item_uom_price.get("price_list_rate"),
+					"currency": item_uom_price.get("currency"),
+					"uom": item_uom,
+					"batch_no": item_uom_price.get("batch_no"),
+					"uoms": self._build_item_uoms(
+						item.stock_uom, uoms_by_item.get(item.name, []), item_prices
+					),
+				}
+			)
+
+		return CatalogOut.dump({"items": result})
+
+	# --- Search (barcode / serial / batch / term) ---
+
+	@staticmethod
+	def _scan_barcode(search_value: str) -> dict[str, str | None]:
 		return scan_barcode(search_value)
 
-	def filter_result_items(self, result, pos_profile):
+	def _filter_result_items(self, result, pos_profile):
 		if result and result.get("items"):
 			pos_profile_doc = frappe.get_cached_doc("POS Profile", pos_profile)
 			pos_item_groups = get_item_group(pos_profile_doc)
@@ -55,8 +162,8 @@ class CatalogService(BaseService):
 				item for item in result.get("items") if item.get("item_group") in pos_item_groups
 			]
 
-	def search_by_term(self, search_term, warehouse, price_list):
-		result = self.search_for_serial_or_batch_or_barcode_number(search_term) or {}
+	def _search_by_term(self, search_term, warehouse, price_list):
+		result = self._scan_barcode(search_term) or {}
 
 		item_code = result.get("item_code", search_term)
 		serial_no = result.get("serial_no", "")
@@ -155,20 +262,31 @@ class CatalogService(BaseService):
 					"price_list_rate": p.get("price_list_rate"),
 				}
 			)
+
+		item_prices_all = self._fetch_item_prices_bulk(
+			[item_code], price_list, frappe.utils.today()
+		).get(item_code, [])
+		uom_rows = [
+			{"uom": row.uom, "conversion_factor": row.conversion_factor} for row in item_doc.uoms
+		]
+		item["uoms"] = self._build_item_uoms(item_doc.stock_uom, uom_rows, item_prices_all)
+
 		return {"items": [item]}
 
-	def get_conditions(self, search_term):
+	# --- SQL fragments (items list) ---
+
+	def _get_items_search_condition(self, search_term):
 		condition = "("
 		condition += """item.name like {search_term}
             or item.item_name like {search_term}""".format(
 			search_term=frappe.db.escape("%" + search_term + "%")
 		)
-		condition += self.add_search_fields_condition(search_term)
+		condition += self._add_pos_search_fields(search_term)
 		condition += ")"
 
 		return condition
 
-	def add_search_fields_condition(self, search_term):
+	def _add_pos_search_fields(self, search_term):
 		condition = ""
 		search_fields = frappe.get_all("POS Search Fields", fields=["fieldname"])
 		if search_fields:
@@ -180,13 +298,15 @@ class CatalogService(BaseService):
 				)
 		return condition
 
-	def get_item_group_condition(self, pos_profile):
+	def _get_item_group_sql_filter(self, pos_profile):
 		cond = "and 1=1"
 		item_groups = get_item_groups(pos_profile)
 		if item_groups:
 			cond = "and item.item_group in (%s)" % (", ".join(["%s"] * len(item_groups)))
 
 		return cond % tuple(item_groups)
+
+	# --- Pricing / UOM ---
 
 	def _fetch_item_prices_bulk(self, item_codes, price_list, current_date):
 		"""One Item Price query for all item_codes; rows grouped per item, valid_from desc."""
@@ -228,6 +348,74 @@ class CatalogService(BaseService):
 
 		return prices_by_item
 
+	def _fetch_uom_conversions_bulk(self, item_codes):
+		"""One query for UOM Conversion Detail rows; grouped per item."""
+		if not item_codes:
+			return {}
+
+		UCD = DocType("UOM Conversion Detail")
+		rows = (
+			frappe.qb.from_(UCD)
+			.select(UCD.parent, UCD.uom, UCD.conversion_factor, UCD.idx)
+			.where(UCD.parent.isin(item_codes))
+			.orderby(UCD.parent, order=Order.asc)
+			.orderby(UCD.idx, order=Order.asc)
+		).run(as_dict=True)
+
+		uoms_by_item = defaultdict(list)
+		for row in rows:
+			uoms_by_item[row.parent].append(
+				{"uom": row.uom, "conversion_factor": row.conversion_factor}
+			)
+		return uoms_by_item
+
+	@staticmethod
+	def _conversion_factor_from_map(item_code, uom, stock_uom, uoms_by_item):
+		if not uom or uom == stock_uom:
+			return 1.0
+		for row in uoms_by_item.get(item_code, []):
+			if row.get("uom") == uom:
+				return row.get("conversion_factor") or 1.0
+		return 1.0
+
+	@staticmethod
+	def _price_for_uom(uom, stock_uom, item_prices, conversion_factor):
+		exact = next((d for d in item_prices if d.get("uom") == uom), None)
+		if exact and exact.get("price_list_rate") is not None:
+			return exact["price_list_rate"]
+
+		stock_price = next((d for d in item_prices if d.get("uom") == stock_uom), None)
+		if stock_price and stock_price.get("price_list_rate") is not None:
+			return stock_price["price_list_rate"] * conversion_factor
+
+		return None
+
+	def _build_item_uoms(self, stock_uom, uom_rows, item_prices):
+		uoms = []
+		stock_cf = 1.0
+		uoms.append(
+			{
+				"uom": stock_uom,
+				"conversion_factor": stock_cf,
+				"price": self._price_for_uom(stock_uom, stock_uom, item_prices, stock_cf),
+			}
+		)
+		seen = {stock_uom}
+		for row in uom_rows:
+			uom = row.get("uom")
+			if not uom or uom in seen:
+				continue
+			seen.add(uom)
+			cf = row.get("conversion_factor") or 1.0
+			uoms.append(
+				{
+					"uom": uom,
+					"conversion_factor": cf,
+					"price": self._price_for_uom(uom, stock_uom, item_prices, cf),
+				}
+			)
+		return uoms
+
 	def _resolve_item_uom_price(self, item, item_prices):
 		"""
 		Pick the default selling UOM and its price for a catalog row.
@@ -245,7 +433,7 @@ class CatalogService(BaseService):
 		3. **Fallback**: if *no* Item Price matched either UOM, take the first
 		   available row (may have a third UOM like "Box").
 
-		Barcode UOM is handled separately in ``search_by_term``; it overrides
+		Barcode UOM is handled separately in ``_search_by_term``; it overrides
 		``item["uom"]`` before price lookup.
 
 		Args:
@@ -272,386 +460,3 @@ class CatalogService(BaseService):
 			item_uom_price = item_prices[0]
 
 		return item_uom, item_uom_price
-
-	def get_items(
-		self, start, page_length=15, price_list=None, item_group=None, pos_profile=None, search_term=""
-	):
-		warehouse, hide_unavailable_items = frappe.db.get_value(
-			"POS Profile", pos_profile, ["warehouse", "hide_unavailable_items"]
-		)
-
-		result = []
-
-		if search_term:
-			result = self.search_by_term(search_term, warehouse, price_list) or []
-			self.filter_result_items(result, pos_profile)
-			if result:
-				return CatalogOut.dump(result)
-
-		if not frappe.db.exists("Item Group", item_group):
-			item_group = get_root_of("Item Group")
-
-		condition = self.get_conditions(search_term)
-		condition += self.get_item_group_condition(pos_profile)
-
-		lft, rgt = frappe.db.get_value("Item Group", item_group, ["lft", "rgt"])
-
-		bin_join_selection, bin_join_condition = "", ""
-		if hide_unavailable_items:
-			bin_join_selection = "LEFT JOIN `tabBin` bin ON bin.item_code = item.name"
-			bin_join_condition = "AND (item.is_stock_item = 0 OR (item.is_stock_item = 1 AND bin.warehouse = %(warehouse)s AND bin.actual_qty > 0))"
-
-		items_data = frappe.db.sql(
-			"""
-            SELECT
-                item.name AS name,
-                item.item_name,
-                item.description,
-                item.item_group,
-                item.stock_uom,
-                item.image AS item_image,
-                item.is_stock_item,
-                item.has_serial_no,
-                item.has_batch_no,
-                item.tax_code,
-                item.max_discount,
-                item.brand,
-                item.sales_uom
-            FROM
-                `tabItem` item {bin_join_selection}
-            WHERE
-                item.disabled = 0
-                AND item.has_variants = 0
-                AND item.is_sales_item = 1
-                AND item.is_fixed_asset = 0
-                AND item.item_group in (SELECT name FROM `tabItem Group` WHERE lft >= {lft} AND rgt <= {rgt})
-                AND {condition}
-                {bin_join_condition}
-            ORDER BY
-                item.name asc
-            LIMIT
-                {page_length} offset {start}""".format(
-				start=cint(start),
-				page_length=cint(page_length),
-				lft=cint(lft),
-				rgt=cint(rgt),
-				condition=condition,
-				bin_join_selection=bin_join_selection,
-				bin_join_condition=bin_join_condition,
-			),
-			{"warehouse": warehouse},
-			as_dict=1,
-		)
-
-		# return (empty) list if there are no results
-		if not items_data:
-			return CatalogOut.dump({"items": []})
-
-		current_date = frappe.utils.today()
-		item_codes = [row.name for row in items_data]
-		prices_by_item = self._fetch_item_prices_bulk(item_codes, price_list, current_date)
-
-		for item in items_data:
-			item.actual_qty, _, _is_negative_stock_allowed = get_stock_availability(item.name, warehouse)
-
-			item_prices = prices_by_item.get(item.name, [])
-			item_uom, item_uom_price = self._resolve_item_uom_price(item, item_prices)
-
-			item_conversion_factor = get_conversion_factor(item.name, item_uom).get("conversion_factor")
-
-			if item.stock_uom != item_uom:
-				item.actual_qty = item.actual_qty // item_conversion_factor
-
-			if item_uom_price and item_uom != item_uom_price.get("uom"):
-				item_uom_price.price_list_rate = item_uom_price.price_list_rate * item_conversion_factor
-
-			result.append(
-				{
-					**item,
-					"description": item.description or "",
-					"price_list_rate": item_uom_price.get("price_list_rate"),
-					"currency": item_uom_price.get("currency"),
-					"uom": item_uom,
-					"batch_no": item_uom_price.get("batch_no"),
-				}
-			)
-
-		return CatalogOut.dump({"items": result})
-
-	def init_empty_invoice_template(self, invoice, pos_profile):
-		"""
-		Build an initialized POS invoice template on the server.
-
-		JS uses ``frm.trigger("set_pos_data")`` on the client; server-side equivalent is
-		``set_missing_values`` + ``calculate_taxes_and_totals`` on the document controller.
-		"""
-		profile = frappe._dict(pos_profile)
-		common_values = {
-			"company": profile.company,
-			"pos_profile": profile.name,
-			"items": [],
-			"is_pos": 1,
-			"allocate_advances_automatically": 0,
-		}
-
-		# In multi-warehouse carts, each row carries its own warehouse.
-		# Keep set_warehouse unset in the template.
-		common_values["set_warehouse"] = None
-
-		# Doctype-specific payload blocks: frontend gets one clear template based on
-		# POS Settings.invoice_type and does not need to infer mixed behavior.
-		sales_invoice_values = {
-			"is_created_using_pos": 1,
-		}
-		pos_invoice_values = {
-			# Explicit for parity with POSInvoice defaults/flow.
-			"is_return": 0,
-		}
-
-		for key, value in common_values.items():
-			invoice.set(key, value)
-
-		if invoice.doctype == "Sales Invoice":
-			for key, value in sales_invoice_values.items():
-				invoice.set(key, value)
-		elif invoice.doctype == "POS Invoice":
-			for key, value in pos_invoice_values.items():
-				invoice.set(key, value)
-
-		if hasattr(invoice, "set_missing_values"):
-			invoice.set_missing_values(for_validate=bool(invoice.get("is_return")))
-		if hasattr(invoice, "calculate_taxes_and_totals"):
-			invoice.calculate_taxes_and_totals()
-
-		return invoice
-
-	def boot_pos(self, pos_profile: str):
-		"""
-		Собирает все необходимые данные для инициализации POS-приложения (SPA) за один запрос.
-		"""
-		if not pos_profile:
-			frappe.throw(_("Invalid POS Profile"))
-
-		profile_doc = frappe.get_doc("POS Profile", pos_profile)
-		if profile_doc.disabled:
-			frappe.throw(_("Invalid POS Profile"))
-
-		open_rows = frappe.get_all(
-			"POS Opening Entry",
-			filters={
-				"user": frappe.session.user,
-				"pos_profile": pos_profile,
-				"docstatus": 1,
-				"pos_closing_entry": ["in", ["", None]],
-			},
-			fields=["name"],
-			order_by="period_start_date desc",
-			limit_page_length=1,
-		)
-		if not open_rows:
-			frappe.throw(
-				_("No open POS Opening Entry for user {0} and profile {1}").format(
-					frappe.session.user, pos_profile
-				)
-			)
-		opening = frappe.get_doc("POS Opening Entry", open_rows[0].name)
-
-		# POS Payment Method: default / allow_in_returns. type (Cash|Bank) — в Mode of Payment, один JOIN.
-		pay_by_mop = {
-			row["mode_of_payment"]: row for row in SessionService()._fetch_payment_methods([pos_profile])
-		}
-
-		balance_details_out = []
-		for row in opening.balance_details or []:
-			pr = pay_by_mop.get(row.mode_of_payment) or {}
-			balance_details_out.append(
-				{
-					"mode_of_payment": row.mode_of_payment,
-					"opening_amount": row.opening_amount,
-					"default": bool(pr.get("default", 0)),
-					"allow_in_returns": bool(pr.get("allow_in_returns", 0)),
-					"mop_type": pr.get("mop_type") or "Cash",
-				}
-			)
-
-		stock = StockService()
-		warehouses = stock.get_warehouses(profile_doc.company)
-
-		checklists_payload = {
-			"opening": [
-				{"title": row.title}
-				for row in (profile_doc.custom_opening_checklist or [])
-				if not row.disabled
-			],
-			"closing": [
-				{"title": row.title}
-				for row in (profile_doc.custom_closing_checklists or [])
-				if not row.disabled
-			],
-		}
-		default_customer_doc = None
-		if profile_doc.customer:
-			try:
-				default_customer_doc = CustomerService().get_details(profile_doc.customer)["customer"]
-			except frappe.DoesNotExistError:
-				pass
-
-		pos_out = {field: profile_doc.get(field) for field in POS_PROFILE_FIELDS}
-		pos_out["customer"] = default_customer_doc
-
-		item_groups_tree = self._build_item_group_tree(pos_profile)
-
-		return BootPosOut.dump(
-			{
-				"opening_voucher": {
-					"name": opening.name,
-					"period_start_date": opening.period_start_date,
-					"user_full_name": frappe.db.get_value("User", opening.user, "full_name") or opening.user,
-					"balance_details": balance_details_out,
-				},
-				"pos_profile": pos_out,
-				"precision": self._get_precision(),
-				"item_groups": {"tree": item_groups_tree},
-				"warehouses": warehouses,
-				"checklists": checklists_payload,
-				"taxes": self._get_taxes(profile_doc.company),
-			}
-		)
-
-	@staticmethod
-	def _get_precision() -> dict[str, object]:
-		"""
-		Number formatting / rounding settings from System Settings.
-
-		These are global (one per ERPNext site) and rarely change.
-		The frontend must use them for all arithmetic to match server-side
-		``flt()`` / ``rounded()`` results exactly.
-
-		Returns:
-			dict with keys: currency (int), float (int),
-			  rounding_method (str), number_format (str).
-		"""
-		settings = frappe.db.get_value(
-			"System Settings",
-			"System Settings",
-			["currency_precision", "float_precision", "rounding_method", "number_format"],
-			as_dict=True,
-		)
-		return {
-			"currency": int(settings.currency_precision) if settings.currency_precision else 2,
-			"float": int(settings.float_precision) if settings.float_precision else 3,
-			"rounding_method": settings.rounding_method,
-			"number_format": settings.number_format,
-		}
-
-	def _get_taxes(self, company: str) -> list[dict[str, object]]:
-		"""Шаблоны налогов компании: title + taxes; только если все строки On Net Total."""
-		if not company:
-			return []
-
-		Template = DocType("Sales Taxes and Charges Template")
-		Tax = DocType("Sales Taxes and Charges")
-
-		rows = (
-			frappe.qb.from_(Template)
-			.left_join(Tax)
-			.on((Tax.parent == Template.name) & (Tax.parenttype == "Sales Taxes and Charges Template"))
-			.select(
-				Template.title,
-				Tax.account_head,
-				Tax.charge_type,
-				Tax.rate,
-				Tax.description,
-				Tax.included_in_print_rate,
-				Tax.idx,
-			)
-			.where(Template.company == company)
-			.where(Template.disabled == 0)
-			.orderby(Template.name, order=Order.asc)
-			.orderby(Tax.idx, order=Order.asc)
-		).run(as_dict=True)
-
-		buckets: dict[str, dict[str, object]] = {}
-		order: list[str] = []
-
-		for row in rows:
-			key = row.template_name
-			if key not in buckets:
-				buckets[key] = {"title": row.title, "taxes": [], "valid": True}
-				order.append(key)
-			if not row.account_head:
-				continue
-			if row.charge_type != "On Net Total":
-				buckets[key]["valid"] = False
-				continue
-			if buckets[key]["valid"]:
-				buckets[key]["taxes"].append(
-					{
-						"account_head": row.account_head,
-						"charge_type": row.charge_type,
-						"rate": row.rate,
-						"included_in_print_rate": row.included_in_print_rate or 0,
-						"idx": row.idx,
-					}
-				)
-
-		return [
-			TaxTemplateOut.dump({"title": buckets[key]["title"], "taxes": buckets[key]["taxes"]})
-			for key in order
-			if buckets[key]["valid"]
-		]
-
-	def _build_item_group_tree(self, pos_profile: str) -> list[dict]:
-		"""
-		Использует встроенную логику ERPNext для получения разрешенных групп
-		и строит из них вложенное JSON-дерево для фронтенда.
-		"""
-		from erpnext.selling.page.point_of_sale.point_of_sale import get_item_groups
-
-		# Получаем плоский список разрешенных групп из POS Profile (нативная функция)
-		allowed_groups = get_item_groups(pos_profile)
-
-		filters = {}
-		if allowed_groups:
-			filters["name"] = ["in", allowed_groups]
-
-		# Запрашиваем информацию о группах
-		groups = frappe.get_all(
-			"Item Group",
-			filters=filters,
-			fields=["name", "item_group_name", "is_group", "parent_item_group"],
-			order_by="lft asc",
-		)
-
-		# Строим словарь узлов
-		by_name = {
-			g.name: {
-				"name": g.name,
-				"label": g.item_group_name,
-				"is_group": bool(g.is_group),
-				"is_directory": bool(g.is_group),
-				"children": [],
-			}
-			for g in groups
-		}
-
-		roots = []
-		# Связываем дочерние элементы с родителями
-		for g in groups:
-			node = by_name[g.name]
-			parent = g.parent_item_group
-			if parent and parent in by_name:
-				by_name[parent]["children"].append(node)
-			else:
-				roots.append(node)
-
-		# Удаляем пустые массивы children для чистоты JSON
-		def clean_empty(nodes):
-			for n in nodes:
-				if not n["children"]:
-					del n["children"]
-				else:
-					clean_empty(n["children"])
-
-		clean_empty(roots)
-		return roots
