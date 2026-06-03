@@ -1,8 +1,5 @@
 import frappe
 from erpnext.accounts.doctype.pos_closing_entry.pos_closing_entry import make_closing_entry_from_opening
-from erpnext.selling.page.point_of_sale.point_of_sale import (
-	create_opening_voucher as native_create_opening_voucher,
-)
 from frappe import _
 from frappe.utils import cint
 from frappe.utils.data import strip_html
@@ -22,12 +19,12 @@ COMMENT_MAX_LEN = 4000
 
 class SessionService(BaseService):
 	@staticmethod
-	def _requires_opening_balance(pm: InternalPaymentMethod) -> bool:
-		return bool(cint(pm.custom_required_opening_balance))
-
-	@staticmethod
 	def _required_mop_names(profile_mops: list[InternalPaymentMethod]) -> set[str]:
-		return {pm.mode_of_payment for pm in profile_mops if SessionService._requires_opening_balance(pm)}
+		return {
+			pm.mode_of_payment
+			for pm in profile_mops
+			if cint(pm.custom_required_opening_balance)
+		}
 
 	@staticmethod
 	def _add_timeline_comment(doc, text: str | None) -> None:
@@ -75,13 +72,6 @@ class SessionService(BaseService):
 		# )
 
 		return user_profiles
-
-	def _validate_applicable_user(self, pos_profile: str, allowed_users: list[str]):
-		"""
-		Validate if the user is allowed to use this POS Profile based on pre-fetched list.
-		"""
-		if allowed_users and self.user not in allowed_users:
-			frappe.throw(_("User {0} is not allowed to use POS Profile {1}").format(self.user, pos_profile))
 
 	def _fetch_payment_methods(self, profile_names: list[str]) -> list[InternalPaymentMethod]:
 		"""Fetch payment methods for multiple POS Profiles in one query."""
@@ -138,56 +128,6 @@ class SessionService(BaseService):
 
 		return checklists_by_profile
 
-	def _create_opening_voucher(self, pos_profile, company, balance_details, comment: str | None = None):
-		"""
-		rewrited native create_opening_voucher from point-of-sale.py
-		"""
-		new_pos_opening = frappe.get_doc(
-			{
-				"doctype": "POS Opening Entry",
-				"period_start_date": frappe.utils.get_datetime(),
-				"posting_date": frappe.utils.getdate(),
-				"user": frappe.session.user,
-				"pos_profile": pos_profile,
-				"company": company,
-			}
-		)
-		new_pos_opening.set("balance_details", balance_details)
-		new_pos_opening.submit()
-
-		if comment:
-			self._add_timeline_comment(new_pos_opening, comment)
-
-		return new_pos_opening.as_dict()
-
-	def _validate_shift_availability(self, pos_profile: str):
-		"""
-		Check if user or profile already has an open shift in ONE query.
-		"""
-		open_entries = frappe.db.get_all(
-			"POS Opening Entry",
-			filters={
-				"pos_closing_entry": ["in", ["", None]],
-				"docstatus": 1,
-			},
-			or_filters=[
-				["user", "=", self.user],
-				["pos_profile", "=", pos_profile],
-			],
-			fields=["user", "pos_profile"],
-		)
-		for entry in open_entries:
-			if entry.user == self.user:
-				frappe.throw(
-					_("You already have an open POS shift. Please close it before opening a new one.")
-				)
-			if entry.pos_profile == pos_profile:
-				frappe.throw(
-					_("POS Profile {0} is already in use by another cashier.").format(
-						frappe.bold(pos_profile)
-					)
-				)
-
 	def _get_profile_config(self, pos_profile: str) -> dict:
 		"""Fetch all necessary profile config in minimal queries."""
 		return {
@@ -225,19 +165,6 @@ class SessionService(BaseService):
 			for pm in profile_mops
 		]
 
-	def _build_closing_actual_map(
-		self,
-		profile_mops: list[InternalPaymentMethod],
-		closing_data: list[ClosingReconciliationItem] | None,
-	) -> dict[str, float]:
-		required = self._required_mop_names(profile_mops)
-		actual_map: dict[str, float] = {}
-		for row in closing_data or []:
-			if row.name not in required:
-				continue
-			actual_map[row.name] = frappe.utils.flt(row.closing_amount)
-		return actual_map
-
 	def _prepare_closing_reconciliation(
 		self,
 		closing_entry,
@@ -250,7 +177,11 @@ class SessionService(BaseService):
 			d.mode_of_payment: frappe.utils.flt(d.opening_amount) for d in opening_entry.balance_details
 		}
 		required = self._required_mop_names(profile_mops)
-		actual_map = self._build_closing_actual_map(profile_mops, closing_data)
+		actual_map: dict[str, float] = {}
+		for row in closing_data or []:
+			if row.name not in required:
+				continue
+			actual_map[row.name] = frappe.utils.flt(row.closing_amount)
 
 		existing_mops = []
 		for row in closing_entry.payment_reconciliation:
@@ -363,7 +294,7 @@ class SessionService(BaseService):
 
 			payment_methods = []
 			for pm in profile_mops:
-				if not self._requires_opening_balance(pm):
+				if not cint(pm.custom_required_opening_balance):
 					continue
 				payment_methods.append({"name": pm.mode_of_payment})
 
@@ -381,23 +312,52 @@ class SessionService(BaseService):
 		balance_details: list[BalanceDetailItem],
 		comment: str | None = None,
 	) -> list[SessionListResponseSerializer]:
-		"""
-		Create a new POS Opening Entry (open shift).
-		"""
-		# 1. Consolidated Availability Check (ONE query for user/profile status)
-		self._validate_shift_availability(pos_profile)
+		"""Create a new POS Opening Entry (open shift)."""
+		open_entries = frappe.db.get_all(
+			"POS Opening Entry",
+			filters={
+				"pos_closing_entry": ["in", ["", None]],
+				"docstatus": 1,
+			},
+			or_filters=[
+				["user", "=", self.user],
+				["pos_profile", "=", pos_profile],
+			],
+			fields=["user", "pos_profile"],
+		)
+		for entry in open_entries:
+			if entry.user == self.user:
+				frappe.throw(
+					_("You already have an open POS shift. Please close it before opening a new one.")
+				)
+			if entry.pos_profile == pos_profile:
+				frappe.throw(
+					_("POS Profile {0} is already in use by another cashier.").format(
+						frappe.bold(pos_profile)
+					)
+				)
 
-		# 2. Get Profile Configuration (Users and Payment Methods)
 		config = self._get_profile_config(pos_profile)
+		allowed_users = config["allowed_users"]
+		if allowed_users and self.user not in allowed_users:
+			frappe.throw(_("User {0} is not allowed to use POS Profile {1}").format(self.user, pos_profile))
 
-		# 3. Validate Permission
-		self._validate_applicable_user(pos_profile, config["allowed_users"])
-
-		# 4. Normalize opening balances (flag on POS Payment Method)
 		normalized_details = self._normalize_opening_balances(config["payment_methods"], balance_details)
 
-		# 5. Create Opening Voucher
-		self._create_opening_voucher(pos_profile, company, normalized_details, comment=comment)
+		new_pos_opening = frappe.get_doc(
+			{
+				"doctype": "POS Opening Entry",
+				"period_start_date": frappe.utils.get_datetime(),
+				"posting_date": frappe.utils.getdate(),
+				"user": frappe.session.user,
+				"pos_profile": pos_profile,
+				"company": company,
+			}
+		)
+		new_pos_opening.set("balance_details", normalized_details)
+		new_pos_opening.submit()
+		if comment:
+			self._add_timeline_comment(new_pos_opening, comment)
 
 		return self.get_list()
 

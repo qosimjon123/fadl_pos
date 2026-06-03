@@ -8,7 +8,6 @@ import unittest
 from types import SimpleNamespace
 
 import frappe
-from frappe.tests import IntegrationTestCase
 
 from fadl_pos.schemas import BalanceDetailItem, ClosingReconciliationItem, InternalPaymentMethod
 from fadl_pos.services.session_service import SessionService
@@ -76,18 +75,13 @@ class TestNormalizeOpeningBalances(unittest.TestCase):
 			)
 
 
-class TestClosingActualMap(unittest.TestCase):
-	def setUp(self):
-		self.svc = SessionService.__new__(SessionService)
-
-	def test_only_required_names_in_map(self):
+class TestRequiredMopNames(unittest.TestCase):
+	def test_only_flagged_mops(self):
 		profile_mops = [_pm("Cash AED", required=1), _pm("Card", required=0)]
-		closing = [
-			ClosingReconciliationItem(name="Cash AED", closing_amount=480),
-			ClosingReconciliationItem(name="Ignored", closing_amount=1),
-		]
-		actual = self.svc._build_closing_actual_map(profile_mops, closing)
-		self.assertEqual(actual, {"Cash AED": 480.0})
+		self.assertEqual(
+			SessionService._required_mop_names(profile_mops),
+			{"Cash AED"},
+		)
 
 
 class TestPrepareClosingReconciliation(unittest.TestCase):
@@ -132,9 +126,3 @@ class TestPrepareClosingReconciliation(unittest.TestCase):
 
 		with self.assertRaises(frappe.ValidationError):
 			self.svc._prepare_closing_reconciliation(closing_entry, opening, [], profile_mops)
-
-
-class TestPaymentMethodsForClient(IntegrationTestCase):
-	def test_requires_opening_balance_helper(self):
-		self.assertTrue(SessionService._requires_opening_balance(_pm("Cash", required=1)))
-		self.assertFalse(SessionService._requires_opening_balance(_pm("Card", required=0)))
