@@ -14,7 +14,6 @@ from fadl_pos.schemas import (
 )
 from fadl_pos.services._base import BaseService
 
-COMMENT_MAX_LEN = 4000
 
 
 class SessionService(BaseService):
@@ -34,11 +33,7 @@ class SessionService(BaseService):
 		cleaned = strip_html(text.strip())
 		if not cleaned:
 			return
-		if len(cleaned) > COMMENT_MAX_LEN:
-			frappe.throw(
-				_("Comment must be at most {0} characters").format(COMMENT_MAX_LEN),
-				frappe.ValidationError,
-			)
+
 		doc.add_comment("Comment", cleaned)
 
 	def _get_profiles(self, user):
