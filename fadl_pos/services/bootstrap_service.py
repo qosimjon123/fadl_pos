@@ -62,7 +62,6 @@ class BootstrapService(BaseService):
 					"opening_amount": row.opening_amount,
 					"default": bool(pr.get("default", 0)),
 					"allow_in_returns": bool(pr.get("allow_in_returns", 0)),
-					"mop_type": pr.get("mop_type") or "Cash",
 				}
 			)
 

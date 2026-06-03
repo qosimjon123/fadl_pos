@@ -33,8 +33,9 @@ def get_list() -> list[SessionListResponseSerializer]:
 
 	- If the user has an open **POS Opening Entry**, a single profile object with ``status: "Open"``,
 	  ``opening_entry``, ``opening_entry_date``.
-	- Otherwise each assigned profile includes ``status: "Close"``, ``payment_methods``, ``checklists``,
-	  ``company``. Closing uses native ``make_closing_entry_from_opening`` elsewhere.
+	- Otherwise each assigned profile includes ``status: "Close"``, ``payment_methods`` (only MOPs with
+	  **Required Opening Balance** on the profile — each ``{"name": "<mode of payment>"}``), ``checklists``,
+	  ``company``.
 	"""
 	return SessionService().get_list()
 
@@ -54,8 +55,9 @@ def open_shift(
 	**Input:**
 
 	- ``pos_profile`` (str, required), ``company`` (str, required).
-	- ``balance_details`` (JSON string or list, required): rows ``{"mode_of_payment": str, "opening_amount": number}``.
-	  Cash modes must include an opening amount; others default to ``0``.
+	- ``balance_details`` (JSON string or list): rows ``{"name": str, "opening_amount": number}`` for each
+	  ``payment_methods[].name`` from :func:`get_list`. Extra or unknown names are ignored; all other profile
+	  MOPs are stored with opening amount ``0``.
 	- ``comment`` (str, optional): timeline comment after submit.
 
 	**Output:** Same shape as :func:`get_list` after opening (typically one ``Open`` profile).
@@ -97,8 +99,8 @@ def close_shift(
 	**Input:**
 
 	- ``opening_entry_name`` (str, required): submitted POS Opening Entry to close.
-	- ``closing_data`` (optional JSON string or list): ``[{"mode_of_payment": str, "closing_amount": number}, ...]``.
-	  Cash modes require ``closing_amount``; others fall back to expected totals when omitted.
+	- ``closing_data`` (optional JSON string or list): ``[{"name": str, "closing_amount": number}, ...]`` for
+	  required MOPs only. Unknown names are ignored; non-required MOPs use expected totals.
 	- ``comment`` (str, optional): timeline comment on the closing entry.
 
 	**Output:**

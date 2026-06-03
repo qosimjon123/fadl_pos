@@ -12,7 +12,7 @@ info:
 
     **Модули:**
     - Логин и QR-токен (гостевые `login` / `login_qr` с rate limit).
-    - Смена POS (`get_list`, `open_shift`, `close_shift`) — только с валидным `Authorization`. Суммы смены и способы оплаты завязаны на тип **Cash** в ERPNext; см. описание тега **POS session**.
+    - Смена POS (`get_list`, `open_shift`, `close_shift`) — только с валидным `Authorization`. Обязательные суммы задаются полем **Required Opening Balance** на POS Profile; см. тег **POS session**.
 
     Секреты и внутренние поля QR в ответах не раскрываются.
   version: 1.0.0
@@ -35,8 +35,10 @@ tags:
     description: |
       Смена POS после логина по токену. **Касса и способы оплаты (ERPNext):**
       - В **`get_list`**: если смена **уже открыта**, в **`pos_profiles`** приходит **только этот профиль** (остальные кассы не показываются). Если смена **не открыта** — все назначенные пользователю профили со **`status: Close`** и подсказками для открытия.
-      - При **`open_shift`** в документ **POS Opening Entry** попадают **все** способы оплаты профиля по порядку: для **не-Cash** стартовая сумма **0**, если в **`balance_details`** не передали другое. В **`balance_details`** **обязательна** непустая **`opening_amount`** только для способов типа **Cash** (имя способа — **`name`** из `payment_methods`).
-      - При **`close_shift`** в **`closing_data`** для **Cash** фактическую **`closing_amount`** передать **обязательно**, иначе будет ошибка. Для **не-Cash** сумму можно не указывать — подставится ожидаемая (`expected_amount`); если указать — будет использовано переданное значение.
+      - В Desk на строке **POS Payment Method** включите **Required Opening Balance** для способов, по которым кассир вводит стартовую/фактическую сумму.
+      - **`get_list`** → **`payment_methods`**: только такие способы, каждый `{"name": "<Mode of Payment>"}`.
+      - **`open_shift`** → **`balance_details`**: `{"name", "opening_amount"}` для каждого `name` из списка; лишние имена игнорируются; остальные способы профиля на документе с **0**.
+      - **`close_shift`** → **`closing_data`**: `{"name", "closing_amount"}` только для обязательных; остальное игнорируется; на документе не-обязательные → **expected_amount**.
 
 paths:
   /api/method/fadl_pos.api.login.login_endpoints.login:
@@ -123,9 +125,8 @@ paths:
 
         **Открытая смена:** в **`pos_profiles`** ровно **один** элемент — профиль текущей смены (`status: Open`, `opening_entry`), без `payment_methods` / `checklists`.
 
-        **Смена закрыта:** все доступные пользователю профили с **`status: Close`**; для каждого приходят **`payment_methods`** и **`checklists`**.
-        В **`payment_methods`** поле **`required_ob`** = `true` означает, что при **`open_shift`** нужно передать **`opening_amount`**
-        для этого способа (это способы типа **Cash** в ERPNext). **`name`** — идентификатор способа оплаты для **`mode_of_payment`** в **`balance_details`**.
+        **Смена закрыта:** все доступные пользователю профили с **`status: Close`**; для каждого приходят **`payment_methods`** (только с **Required Opening Balance**) и **`checklists`**.
+        Каждый элемент **`payment_methods`**: `{"name": "<Mode of Payment>"}` — те же **`name`** в **`balance_details`** / **`closing_data`**.
       operationId: fadlPosSessionGetList
       security: [{ FadlPosToken: [] }]
       responses:
@@ -138,7 +139,7 @@ paths:
       tags: [POS session]
       summary: То же, что GET (удобно для SDK)
       description: |
-        См. GET: **`payment_methods`**, флаг **`required_ob`** (стартовая сумма только для Cash) и связь с **`open_shift`** / **`balance_details`**.
+        См. GET: **`payment_methods`** и связь с **`open_shift`** / **`balance_details`** по полю **`name`**.
       operationId: fadlPosSessionGetListPost
       security: [{ FadlPosToken: [] }]
       responses:
@@ -153,11 +154,9 @@ paths:
       tags: [POS session]
       summary: Открыть смену (POS Opening Entry)
       description: |
-        **`balance_details`** — массив `{ "mode_of_payment", "opening_amount" }` или JSON-строка; допустим и уже распарсенный массив в теле JSON.
+        **`balance_details`** — массив `{ "name", "opening_amount" }` или JSON-строка.
 
-        **Обработка:** в **POS Opening Entry** создаётся **по одной строке на каждый** способ оплаты из профиля. Для **Cash** в `balance_details` должна быть строка с тем же **`mode_of_payment`**, что **`name`** из `get_list` → `payment_methods`, и **непустой** **`opening_amount`**. Для **не-Cash** строку в запросе можно **не присылать** — на документе сумма будет **0**; если прислали — используется переданное **`opening_amount`**.
-
-        Ориентируйтесь на **`payment_methods[].required_ob`** (Cash) и **`name`** из ответа **`get_list`**.
+        **Обработка:** в **POS Opening Entry** — **все** способы профиля; суммы только для **`name`** из `get_list` → `payment_methods` (флаг в Desk); остальные **0**. Лишние **`name`** в запросе игнорируются.
       operationId: fadlPosSessionOpenShift
       security: [{ FadlPosToken: [] }]
       requestBody:
@@ -180,11 +179,9 @@ paths:
       tags: [POS session]
       summary: Закрыть смену по имени opening entry
       description: |
-        **`closing_data`** — опционально массив `{ "mode_of_payment", "closing_amount" }` или JSON-строка.
+        **`closing_data`** — опционально массив `{ "name", "closing_amount" }` или JSON-строка.
 
-        **Реальная обработка:**
-        - Для способов типа **Cash** фактическую **`closing_amount`** нужно передать в `closing_data` (для каждой соответствующей строки сверки), иначе сервер вернёт ошибку.
-        - Для **не-Cash** строку в `closing_data` можно **не присылать** — подставится **`expected_amount`** (ожидаемый остаток); если **прислать** — будет использовано ваше **`closing_amount`**.
+        **Обработка:** для каждого способа с **Required Opening Balance** нужна строка с **`closing_amount`**; лишние **`name`** игнорируются; остальные способы на документе получают **`expected_amount`**.
       operationId: fadlPosSessionCloseShift
       security: [{ FadlPosToken: [] }]
       requestBody:
@@ -245,25 +242,25 @@ components:
 
     BalanceDetailRow:
       type: object
-      required: [mode_of_payment, opening_amount]
+      required: [name, opening_amount]
       properties:
-        mode_of_payment:
+        name:
           type: string
-          description: Имя способа оплаты (как `payment_methods[].name` в get_list); фактически учитываются только способы типа Cash.
+          description: Mode of Payment (как `payment_methods[].name` в get_list).
         opening_amount:
           type: number
-          description: Стартовая сумма по кассе для этого Cash-способа.
+          description: Стартовая сумма для этого способа.
 
     ClosingRow:
       type: object
-      required: [mode_of_payment, closing_amount]
+      required: [name, closing_amount]
       properties:
-        mode_of_payment:
+        name:
           type: string
-          description: Имя способа оплаты; для Cash закрытие без строки в closing_data приведёт к ошибке.
+          description: Mode of Payment с Required Opening Balance; без строки — ошибка при close.
         closing_amount:
           type: number
-          description: Фактический остаток; для не-Cash при отсутствии строки подставится expected_amount.
+          description: Фактический остаток по кассе.
 
     OpenShiftRpcBody:
       type: object
@@ -273,7 +270,7 @@ components:
         company: { type: string }
         balance_details:
           description: |
-            Массив или JSON-строка. На сервере остаются только элементы для **Cash** из профиля; остальное отбрасывается.
+            Массив или JSON-строка. Учитываются только `name` из payment_methods (Required Opening Balance).
           oneOf:
             - type: string
             - type: array
@@ -291,7 +288,7 @@ components:
         opening_entry_name: { type: string }
         closing_data:
           description: |
-            Опционально. Обязательны явные **closing_amount** для **Cash**; для не-Cash можно не передавать строку.
+            Опционально. `name` + `closing_amount` для каждого обязательного способа из профиля.
           oneOf:
             - type: string
             - type: array
@@ -334,23 +331,15 @@ components:
                 type: array
                 items: { type: object, properties: { title: { type: string } } }
         payment_methods:
-          description: Только для status Close. Список способов оплаты POS Profile из ERPNext.
+          description: Только для status Close. Способы с Required Opening Balance на POS Profile.
           type: array
           items:
             type: object
+            required: [name]
             properties:
               name:
                 type: string
-                description: Идентификатор способа оплаты — используйте как mode_of_payment в balance_details / closing_data.
-              default:
-                type: integer
-                description: Признак способа по умолчанию в профиле.
-              type:
-                type: string
-                description: Тип способа оплаты в ERPNext (например Cash, Bank и т.д.).
-              required_ob:
-                type: boolean
-                description: true = при открытии смены обязательна стартовая сумма (opening_amount); совпадает с типом Cash.
+                description: Mode of Payment — тот же `name` в balance_details / closing_data.
 
     SessionListBlock:
       type: object

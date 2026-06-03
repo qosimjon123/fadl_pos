@@ -25,14 +25,14 @@ class TestSessionParse(IntegrationTestCase):
 		frappe.set_user("Administrator")
 
 	def test_parse_balance_details_from_json_string(self):
-		raw = '[{"mode_of_payment":"Cash","opening_amount":100.5}]'
+		raw = '[{"name":"Cash","opening_amount":100.5}]'
 		rows = _parse_list(raw, TypeAdapter(list[BalanceDetailItem])) or []
 		self.assertEqual(len(rows), 1)
-		self.assertEqual(rows[0].mode_of_payment, "Cash")
+		self.assertEqual(rows[0].name, "Cash")
 		self.assertEqual(rows[0].opening_amount, 100.5)
 
 	def test_parse_balance_details_from_list(self):
-		raw = [{"mode_of_payment": "Cash", "opening_amount": 0}]
+		raw = [{"name": "Cash", "opening_amount": 0}]
 		rows = _parse_list(raw, TypeAdapter(list[BalanceDetailItem])) or []
 		self.assertEqual(len(rows), 1)
 
@@ -46,7 +46,7 @@ class TestSessionParse(IntegrationTestCase):
 
 	def test_parse_balance_details_not_array_raises(self):
 		with self.assertRaises(ValidationError):
-			_parse_list('{"mode_of_payment":"Cash"}', TypeAdapter(list[BalanceDetailItem]))
+			_parse_list('{"name":"Cash"}', TypeAdapter(list[BalanceDetailItem]))
 
 	def test_parse_balance_details_row_not_object_raises(self):
 		with self.assertRaises(ValidationError):
@@ -59,7 +59,7 @@ class TestSessionParse(IntegrationTestCase):
 		self.assertIsNone(_parse_list("", TypeAdapter(list[ClosingReconciliationItem])))
 
 	def test_parse_closing_data_valid(self):
-		raw = [{"mode_of_payment": "Cash", "closing_amount": 10}]
+		raw = [{"name": "Cash", "closing_amount": 10}]
 		rows = _parse_list(raw, TypeAdapter(list[ClosingReconciliationItem]))
 		self.assertEqual(len(rows), 1)
 		self.assertEqual(rows[0].closing_amount, 10.0)

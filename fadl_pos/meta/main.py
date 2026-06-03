@@ -61,6 +61,17 @@ POS_PROFILE_FIELDS = {
 	"utm_source": False,
 }
 
+# POS Payment Method child — session open/close (server SQL only; not in RPC JSON).
+POS_PAYMENT_METHOD_SERVER_FIELDS = (
+	"mode_of_payment",
+	"default",
+	"custom_required_opening_balance",
+	"idx",
+)
+
+# Session get_list → payment_methods[] (client sends the same `name` back).
+POS_PAYMENT_METHOD_CLIENT_FIELDS = ("name",)
+
 # Customer — ERPNext Selling + regional/custom (customer_name_in_arabic на сайте UAE).
 CUSTOMER_FIELDS = {
 	# ── True: SPA (выбор клиента, карта, лояльность) ───────────────────────

@@ -4,6 +4,7 @@ from erpnext.selling.page.point_of_sale.point_of_sale import (
 	create_opening_voucher as native_create_opening_voucher,
 )
 from frappe import _
+from frappe.utils import cint
 from frappe.utils.data import strip_html
 
 from fadl_pos.schemas import (
@@ -20,6 +21,14 @@ COMMENT_MAX_LEN = 4000
 
 
 class SessionService(BaseService):
+	@staticmethod
+	def _requires_opening_balance(pm: InternalPaymentMethod) -> bool:
+		return bool(cint(pm.custom_required_opening_balance))
+
+	@staticmethod
+	def _required_mop_names(profile_mops: list[InternalPaymentMethod]) -> set[str]:
+		return {pm.mode_of_payment for pm in profile_mops if SessionService._requires_opening_balance(pm)}
+
 	@staticmethod
 	def _add_timeline_comment(doc, text: str | None) -> None:
 		"""Append a Comment row like Desk timeline (reference_doctype / reference_name)."""
@@ -75,26 +84,29 @@ class SessionService(BaseService):
 			frappe.throw(_("User {0} is not allowed to use POS Profile {1}").format(self.user, pos_profile))
 
 	def _fetch_payment_methods(self, profile_names: list[str]) -> list[InternalPaymentMethod]:
-		"""
-		Fetch payment methods for multiple POS Profiles including their type in ONE query.
-		"""
+		"""Fetch payment methods for multiple POS Profiles in one query."""
 		if not profile_names:
 			return []
 
-		return frappe.db.sql(
+		rows = frappe.db.sql(
 			"""
             SELECT
-                pm.parent as pos_profile, pm.mode_of_payment, pm.default, mop.type as mop_type
+                pm.parent as pos_profile,
+                pm.mode_of_payment,
+                pm.default,
+                pm.custom_required_opening_balance,
+                pm.idx
             FROM
                 `tabPOS Payment Method` pm
-            JOIN
-                `tabMode of Payment` mop ON mop.name = pm.mode_of_payment
             WHERE
                 pm.parent IN %(profile_names)s AND pm.parenttype = 'POS Profile'
+            ORDER BY
+                pm.parent ASC, pm.idx ASC
             """,
 			{"profile_names": profile_names},
 			as_dict=True,
 		)
+		return [InternalPaymentMethod.model_validate(row) for row in rows]
 
 	def _fetch_checklists(self, profile_names: list[str]) -> dict[str, Checklists]:
 		"""
@@ -186,88 +198,95 @@ class SessionService(BaseService):
 	def _normalize_opening_balances(
 		self, profile_mops: list[InternalPaymentMethod], balance_details: list[BalanceDetailItem]
 	) -> list[dict]:
-		"""Validates Cash requirements and filters out non-Cash methods."""
-		provided_mops = {d.mode_of_payment: d.opening_amount for d in balance_details}
+		"""All profile MOPs on voucher; required rows from client `name`, others zero."""
+		required = self._required_mop_names(profile_mops)
+		if not required:
+			frappe.throw(
+				_("No payment method with Required Opening Balance is configured on this POS Profile.")
+			)
 
-		normalized_details: list[dict] = []
-		for pm in profile_mops:
-			if pm.get("mop_type") == "Cash":
-				mop = pm.get("mode_of_payment")
-				amount = provided_mops.get(mop)
+		provided: dict[str, float] = {}
+		for row in balance_details:
+			if row.name not in required:
+				continue
+			provided[row.name] = frappe.utils.flt(row.opening_amount)
 
-				if amount is None or amount == "":
-					frappe.throw(
-						_("Please enter an opening balance for Cash ({0}) as required by POS Profile").format(
-							mop
-						)
-					)
+		for mop in required:
+			if mop not in provided:
+				frappe.throw(_("Please enter an opening balance for {0}").format(mop))
 
-				normalized_details.append(
-					{"mode_of_payment": mop, "opening_amount": frappe.utils.flt(amount)}
-				)
-		return normalized_details
+		return [
+			{
+				"mode_of_payment": pm.mode_of_payment,
+				"opening_amount": provided[pm.mode_of_payment]
+				if pm.mode_of_payment in required
+				else 0.0,
+			}
+			for pm in profile_mops
+		]
 
-	def _prepare_closing_reconciliation(self, closing_entry, opening_entry, closing_data):
-		"""Processes the reconciliation table for a closing entry efficiently."""
+	def _build_closing_actual_map(
+		self,
+		profile_mops: list[InternalPaymentMethod],
+		closing_data: list[ClosingReconciliationItem] | None,
+	) -> dict[str, float]:
+		required = self._required_mop_names(profile_mops)
+		actual_map: dict[str, float] = {}
+		for row in closing_data or []:
+			if row.name not in required:
+				continue
+			actual_map[row.name] = frappe.utils.flt(row.closing_amount)
+		return actual_map
+
+	def _prepare_closing_reconciliation(
+		self,
+		closing_entry,
+		opening_entry,
+		closing_data: list[ClosingReconciliationItem] | None,
+		profile_mops: list[InternalPaymentMethod],
+	):
+		"""Reconciliation: required MOPs need client closing_amount; others use expected."""
 		opening_amounts = {
 			d.mode_of_payment: frappe.utils.flt(d.opening_amount) for d in opening_entry.balance_details
 		}
-		actual_map = {p.mode_of_payment: p.closing_amount for p in (closing_data or [])}
-
-		# Collect all MOPs to fetch their types in one query
-		all_mops = set(
-			list(opening_amounts.keys())
-			+ [row.mode_of_payment for row in closing_entry.payment_reconciliation]
-		)
-		mop_types = {
-			m.name: m.type
-			for m in frappe.get_all(
-				"Mode of Payment", filters={"name": ["in", list(all_mops)]}, fields=["name", "type"]
-			)
-		}
+		required = self._required_mop_names(profile_mops)
+		actual_map = self._build_closing_actual_map(profile_mops, closing_data)
 
 		existing_mops = []
 		for row in closing_entry.payment_reconciliation:
 			existing_mops.append(row.mode_of_payment)
+			mop = row.mode_of_payment
 
-			opening_amt = opening_amounts.get(row.mode_of_payment, 0)
+			opening_amt = opening_amounts.get(mop, 0)
 			row.opening_amount = opening_amt
 			row.expected_amount += opening_amt
 
-			mop_type = mop_types.get(row.mode_of_payment)
-
-			if row.mode_of_payment in actual_map and actual_map[row.mode_of_payment] is not None:
-				row.closing_amount = frappe.utils.flt(actual_map[row.mode_of_payment])
-			elif mop_type == "Cash":
-				frappe.throw(
-					_("Please enter the actual closing amount for Cash ({0})").format(row.mode_of_payment)
-				)
+			if mop in required:
+				if mop not in actual_map:
+					frappe.throw(_("Please enter the closing amount for {0}").format(mop))
+				row.closing_amount = actual_map[mop]
 			else:
 				row.closing_amount = row.expected_amount
 
 			row.difference = frappe.utils.flt(row.closing_amount) - frappe.utils.flt(row.expected_amount)
 
-		# Append payment methods that were in the opening entry but had NO transactions
 		for mop, opening_amt in opening_amounts.items():
-			if mop not in existing_mops:
-				mop_type = mop_types.get(mop)
-				closing_amt = opening_amt
+			if mop in existing_mops:
+				continue
+			if mop in required and mop not in actual_map:
+				frappe.throw(_("Please enter the closing amount for {0}").format(mop))
+			closing_amt = actual_map[mop] if mop in required else opening_amt
 
-				if mop in actual_map and actual_map[mop] is not None:
-					closing_amt = frappe.utils.flt(actual_map[mop])
-				elif mop_type == "Cash":
-					frappe.throw(_("Please enter the actual closing amount for Cash ({0})").format(mop))
-
-				closing_entry.append(
-					"payment_reconciliation",
-					{
-						"mode_of_payment": mop,
-						"opening_amount": opening_amt,
-						"expected_amount": opening_amt,
-						"closing_amount": closing_amt,
-						"difference": closing_amt - opening_amt,
-					},
-				)
+			closing_entry.append(
+				"payment_reconciliation",
+				{
+					"mode_of_payment": mop,
+					"opening_amount": opening_amt,
+					"expected_amount": opening_amt,
+					"closing_amount": closing_amt,
+					"difference": closing_amt - opening_amt,
+				},
+			)
 
 	def _check_opening_entry(self, user=None, pos_profile=None):
 		"""
@@ -344,14 +363,9 @@ class SessionService(BaseService):
 
 			payment_methods = []
 			for pm in profile_mops:
-				payment_methods.append(
-					{
-						"name": pm.mode_of_payment,
-						"default": pm.default,
-						"type": pm.mop_type,
-						"required_ob": bool(pm.mop_type == "Cash"),
-					}
-				)
+				if not self._requires_opening_balance(pm):
+					continue
+				payment_methods.append({"name": pm.mode_of_payment})
 
 			profile_dict["checklists"] = [checklists_by_profile.get(p_name, {"opening": [], "closing": []})]
 			profile_dict["payment_methods"] = payment_methods
@@ -379,7 +393,7 @@ class SessionService(BaseService):
 		# 3. Validate Permission
 		self._validate_applicable_user(pos_profile, config["allowed_users"])
 
-		# 4. Normalize and Validate Opening Balances (Strictly Cash)
+		# 4. Normalize opening balances (flag on POS Payment Method)
 		normalized_details = self._normalize_opening_balances(config["payment_methods"], balance_details)
 
 		# 5. Create Opening Voucher
@@ -407,8 +421,10 @@ class SessionService(BaseService):
 		# 1. Generate closing entry using native builder
 		closing_entry = make_closing_entry_from_opening(opening_entry)
 
-		# 2. Merge and Fix Reconciliation logic (Extracted)
-		self._prepare_closing_reconciliation(closing_entry, opening_entry, closing_data)
+		config = self._get_profile_config(opening_entry.pos_profile)
+		self._prepare_closing_reconciliation(
+			closing_entry, opening_entry, closing_data, config["payment_methods"]
+		)
 
 		# 3. Save and submit
 		closing_entry.insert(ignore_permissions=True)

@@ -77,10 +77,13 @@ class CustomerTransactionsOut(OutputSchema):
 
 
 class InternalPaymentMethod(OutputSchema):
+	"""Row from SQL; not exposed in session RPC."""
+
 	pos_profile: str
 	mode_of_payment: str
 	default: int
-	mop_type: str
+	custom_required_opening_balance: int = 0
+	idx: int = 0
 
 
 class ChecklistItem(OutputSchema):
@@ -93,10 +96,9 @@ class Checklists(OutputSchema):
 
 
 class PaymentMethodOut(OutputSchema):
+	"""Opening/closing form: one row per MOP with Required Opening Balance (server-filtered)."""
+
 	name: str
-	default: int
-	type: str
-	required_ob: bool
 
 
 class PosProfileOut(OutputSchema):
@@ -250,7 +252,6 @@ class OpeningBalanceOut(OutputSchema):
 	opening_amount: float
 	default: bool = False
 	allow_in_returns: bool = False
-	mop_type: str = "Cash"
 
 
 class OpeningVoucherOut(OutputSchema):

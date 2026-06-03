@@ -24,12 +24,12 @@ class CustomerManageBody(InputSchema):
 
 
 class BalanceDetailItem(InputSchema):
-	mode_of_payment: str = Field(min_length=1)
+	name: str = Field(min_length=1)
 	opening_amount: float
 
 
 class ClosingReconciliationItem(InputSchema):
-	mode_of_payment: str = Field(min_length=1)
+	name: str = Field(min_length=1)
 	closing_amount: float
 
 
