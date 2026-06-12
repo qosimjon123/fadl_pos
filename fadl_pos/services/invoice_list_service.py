@@ -12,12 +12,6 @@ from fadl_pos.services._base import BaseService
 class InvoiceListService(BaseService):
 	"""Returns merged POS + POS Sales Invoice history rows."""
 
-	def get(self, action: str, **kwargs) -> dict:
-		if action == "history":
-			return self.get_history(**kwargs)
-		else:
-			frappe.throw(_("Invalid action: {0}").format(action))
-
 	def get_history(self, search_term: str = "", status: str = "Paid", limit: int = 20) -> dict:
 		"""
 		Native: Get past order list (POS Invoices + Sales Invoices).

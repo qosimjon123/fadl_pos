@@ -1,7 +1,7 @@
 """
 POS SPA bootstrap: opening voucher, profile, item group tree, warehouses, taxes, precision.
 
-Invoked via ``catalog.get(action="boot")`` → :class:`BootstrapService`.
+Invoked via ``fadl_pos.api.catalog.boot`` → :class:`BootstrapService`.
 """
 
 import frappe

@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import frappe
 from frappe.rate_limiter import rate_limit
-from pydantic import ValidationError
 
 from fadl_pos.api.login.auth_service import TokenAuthService
+from fadl_pos.api.rpc_boundary import dump_out, validate_in
 from fadl_pos.schemas import AuthTokenOut, LoginQuery, QRGenerateOut, QRGenerateQuery, QRLoginQuery
 
 
@@ -26,19 +26,15 @@ def login(usr: str | None = None, pwd: str | None = None) -> AuthTokenOut:
 
 	**Input:**
 
-	- ``usr`` (str, required): Frappe username / email.
-	- ``pwd`` (str, required): password.
+	- ``usr`` (str, required): Frappe username / email (5–100 chars).
+	- ``pwd`` (str, required): password (8–100 chars).
 
 	**Output:**
 
-	- ``{"authorization": "Basic <base64(api_key:api_secret)>", ...}`` — see ``AuthTokenResponse``
-	  serializer for full keys returned by ``TokenAuthService``.
+	- ``{"token": "Basic <base64(api_key:api_secret)>"}`` — ``AuthTokenOut``.
 	"""
-	try:
-		query = LoginQuery.model_validate({"usr": usr, "pwd": pwd})
-	except ValidationError as exc:
-		frappe.throw(str(exc.errors()), frappe.ValidationError)
-	return _service().login(login=query.usr, password=query.pwd)
+	body = validate_in(LoginQuery, {"usr": usr, "pwd": pwd})
+	return dump_out(AuthTokenOut, _service().login(login=body.usr, password=body.pwd))
 
 
 @frappe.whitelist(methods=["POST"])
@@ -52,7 +48,7 @@ def clear_sessions() -> AuthTokenOut:
 
 	**Output:** Same credential envelope shape as ``login`` (fresh secret).
 	"""
-	return _service().clear_sessions()
+	return dump_out(AuthTokenOut, _service().clear_sessions())
 
 
 @frappe.whitelist(methods=["POST"])
@@ -64,17 +60,14 @@ def generate_qr(pin_code: str | None = None) -> QRGenerateOut:
 
 	**Input:**
 
-	- ``pin_code`` (str, optional): PIN used by cipher when generating payload.
+	- ``pin_code`` (str, required): 6-digit PIN used by cipher when generating payload.
 
 	**Output:**
 
 	- ``QRGenerateResponse`` dict — encrypted blob / metadata fields from ``TokenAuthService``.
 	"""
-	try:
-		query = QRGenerateQuery.model_validate({"pin_code": pin_code})
-	except ValidationError as exc:
-		frappe.throw(str(exc.errors()), frappe.ValidationError)
-	return _service().generate_qr(pin_code=query.pin_code)
+	body = validate_in(QRGenerateQuery, {"pin_code": pin_code})
+	return dump_out(QRGenerateOut, _service().generate_qr(pin_code=body.pin_code))
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -90,13 +83,13 @@ def login_qr(
 
 	**Input:**
 
-	- ``encrypted_qr`` (str, required): payload from ``generate_qr``.
-	- ``pin_code`` (str, optional): PIN used to decrypt.
+	- ``encrypted_qr`` (str, required): ciphertext blob from ``generate_qr`` (10–512 chars).
+	- ``pin_code`` (str, required): 6-digit PIN used to decrypt.
 
-	**Output:** Same ``authorization`` Basic envelope as password ``login``.
+	**Output:** Same ``token`` Basic envelope as password ``login`` (``AuthTokenOut``).
 	"""
-	try:
-		query = QRLoginQuery.model_validate({"encrypted_qr": encrypted_qr, "pin_code": pin_code})
-	except ValidationError as exc:
-		frappe.throw(str(exc.errors()), frappe.ValidationError)
-	return _service().login_qr(encrypted_qr=query.encrypted_qr, pin_code=query.pin_code)
+	body = validate_in(QRLoginQuery, {"encrypted_qr": encrypted_qr, "pin_code": pin_code})
+	return dump_out(
+		AuthTokenOut,
+		_service().login_qr(encrypted_qr=body.encrypted_qr, pin_code=body.pin_code),
+	)

@@ -1,9 +1,8 @@
 """
 Customer CRUD/search and Desk POS field patches.
 
-**CustomerService.get / manage** mirror ``fadl_pos.api.customer`` — list, details, recent transactions;
-create/update via standard **Customer** documents; ``set_info`` delegates to
-``erpnext...point_of_sale.set_customer_info``.
+Called from ``fadl_pos.api.customer`` — list, details, recent transactions;
+create/update via standard **Customer** documents.
 """
 
 import frappe
@@ -42,24 +41,6 @@ class CustomerService(BaseService):
 			as_dict=True,
 		)
 		return {r.party: flt(r.balance) for r in rows}
-
-	def get(self, action: str, **kwargs):
-		if action == "list":
-			return self.get_list(**kwargs)
-		elif action == "details":
-			return self.get_details(**kwargs)
-		elif action == "recent_transactions":
-			return self.get_recent_transactions(**kwargs)
-		else:
-			frappe.throw(_("Invalid action: {0}").format(action))
-
-	def manage(self, action: str, data: dict):
-		if action == "create":
-			return self.create(data)
-		elif action == "update":
-			return self.update(data)
-		else:
-			frappe.throw(_("Invalid action: {0}").format(action))
 
 	def _query_customers(self, mode: str, search_term: str = "", limit: int = 10, customer: str = ""):
 		filters = {"disabled": 0, "is_frozen": 0}

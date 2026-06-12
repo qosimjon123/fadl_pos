@@ -1,16 +1,7 @@
 """
 Promotions and coupon apply path for fadl POS.
 
-**get(action, **kwargs)**
-
-* ``active_offers`` → ``{\"offers\": [Pricing Rule field dicts within validity window]}``.
-* ``coupons`` → ``{\"coupons\": [Coupon Code rows]}``.
-
-**apply_offer(invoice_name, coupon_code=None)**
-
-* *Input*: ``invoice_name`` — POS or Sales Invoice id; optional ``coupon_code`` sets ``doc.coupon_code``.
-* *Output*: ``{\"status\": \"success\", \"invoice\": dict}`` after native ``set_missing_values``,
-  ``calculate_taxes_and_totals``, and ``save`` (full validate + pricing rules).
+Called from ``fadl_pos.api.offers`` — one method per whitelist endpoint.
 """
 
 import frappe
@@ -23,14 +14,6 @@ from fadl_pos.services.invoice_service import InvoiceService
 
 class OffersService(BaseService):
 	"""Read offers/coupons; apply coupon on draft invoice using ERPNext document controller."""
-
-	def get(self, action: str, **kwargs) -> dict:
-		if action == "active_offers":
-			return self.get_active_offers(**kwargs)
-		elif action == "coupons":
-			return self.get_coupons(**kwargs)
-		else:
-			frappe.throw(_("Invalid action: {0}").format(action))
 
 	def get_active_offers(self, pos_profile: str | None = None) -> dict:
 		"""

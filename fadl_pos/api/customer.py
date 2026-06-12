@@ -4,11 +4,12 @@
 
 from __future__ import annotations
 
+import json
+
 import frappe
 from frappe import _
-from pydantic import ValidationError
 
-from fadl_pos.api.rpc_boundary import dump_out, raise_validation_error, validate_in
+from fadl_pos.api.rpc_boundary import dump_out, validate_in
 from fadl_pos.schemas import (
 	CustomerCreateIn,
 	CustomerDetailsIn,
@@ -54,21 +55,15 @@ def recent_transactions(customer: str | None = None):
 @frappe.whitelist(methods=["POST"])
 def create(data: str | None = None):
 	"""``/api/method/fadl_pos.api.customer.create``"""
-	try:
-		payload = CustomerCreateIn.model_validate_json(data or "{}")
-	except ValidationError as exc:
-		raise_validation_error(exc)
-	return dump_out(CustomerManageOut, CustomerService().create(payload.model_dump()))
+	body = validate_in(CustomerCreateIn, json.loads(data or "{}"))
+	return dump_out(CustomerManageOut, CustomerService().create(body.model_dump()))
 
 
 @frappe.whitelist(methods=["POST"])
 def update(data: str | None = None):
 	"""``/api/method/fadl_pos.api.customer.update``"""
-	try:
-		payload = CustomerUpdateIn.model_validate_json(data or "{}")
-	except ValidationError as exc:
-		raise_validation_error(exc)
-	return dump_out(CustomerManageOut, CustomerService().update(payload.model_dump()))
+	body = validate_in(CustomerUpdateIn, json.loads(data or "{}"))
+	return dump_out(CustomerManageOut, CustomerService().update(body.model_dump()))
 
 
 @frappe.whitelist(methods=["POST"])
@@ -85,6 +80,7 @@ def set_info(
 		{"fieldname": fieldname or "", "customer": customer or "", "value": value or ""},
 	)
 	set_customer_info(body.fieldname, body.customer, body.value)
-	return CustomerManageOut.dump(
-		{"status": "success", "message": _("Customer information updated")}
+	return dump_out(
+		CustomerManageOut,
+		{"status": "success", "message": _("Customer information updated")},
 	)

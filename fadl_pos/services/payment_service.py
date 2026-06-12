@@ -1,13 +1,7 @@
 """
 Payments, coupons, loyalty — thin wrappers over ERPNext POS / accounts helpers.
 
-**PaymentService.manage(action, **kwargs)**
-
-* ``update_invoice_payments`` — ``invoice_name`` (POS Invoice only), ``payments`` list → calls
-  :meth:`erpnext.accounts.doctype.pos_invoice.pos_invoice.POSInvoice.update_payments`; response includes
-  ``paid_amount`` / ``outstanding_amount`` from the saved document.
-* ``validate_coupon`` — ``coupon_code`` → ``{\"coupon_code\", \"valid\", \"message\"}``.
-* ``get_loyalty_details`` — ``customer``, optional ``posting_date`` → native loyalty detail dict.
+Called from ``fadl_pos.api.payment`` — one method per whitelist endpoint.
 
 Errors use ``frappe.ValidationError`` for wrong doctype or missing documents.
 """
@@ -21,16 +15,6 @@ from fadl_pos.services._base import BaseService
 
 class PaymentService(BaseService):
 	"""Partial POS payments, coupon validation, loyalty lookup."""
-
-	def manage(self, action: str, **kwargs):
-		if action == "update_invoice_payments":
-			return self.update_invoice_payments(**kwargs)
-		elif action == "validate_coupon":
-			return self.validate_coupon(**kwargs)
-		elif action == "get_loyalty_details":
-			return self.get_loyalty_details(**kwargs)
-		else:
-			frappe.throw(_("Invalid action: {0}").format(action))
 
 	def update_invoice_payments(self, invoice_name: str, payments: list) -> dict:
 		"""

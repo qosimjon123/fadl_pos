@@ -4,10 +4,11 @@
 
 from __future__ import annotations
 
-import frappe
-from pydantic import ValidationError
+import json
 
-from fadl_pos.api.rpc_boundary import dump_out, raise_validation_error, validate_in
+import frappe
+
+from fadl_pos.api.rpc_boundary import dump_out, validate_in
 from fadl_pos.schemas import (
 	CartValidateIn,
 	CartValidateOut,
@@ -26,44 +27,41 @@ from fadl_pos.services.invoice_service import InvoiceService
 from fadl_pos.services.validation_service import ValidationService
 
 
-def _parse_invoice_data(data: str) -> dict:
-	try:
-		return InvoiceSyncBody.model_validate_json(data).model_dump()
-	except ValidationError as exc:
-		raise_validation_error(exc)
-		raise AssertionError("unreachable")
-
-
 @frappe.whitelist(methods=["POST"])
 def save(data: str | None = None):
 	body = validate_in(InvoiceSaveIn, {"data": data or ""})
-	return dump_out(InvoiceSaveOut, InvoiceService().save(_parse_invoice_data(body.data)))
+	payload = validate_in(InvoiceSyncBody, json.loads(body.data))
+	return dump_out(InvoiceSaveOut, InvoiceService().save(payload.model_dump()))
 
 
 @frappe.whitelist(methods=["POST"])
 def submit(data: str | None = None):
 	body = validate_in(InvoiceSubmitIn, {"data": data or ""})
-	return dump_out(InvoiceSubmitOut, InvoiceService().submit(_parse_invoice_data(body.data)))
+	payload = validate_in(InvoiceSyncBody, json.loads(body.data))
+	return dump_out(InvoiceSubmitOut, InvoiceService().submit(payload.model_dump()))
 
 
 @frappe.whitelist(methods=["POST"])
 def return_invoice(data: str | None = None):
 	body = validate_in(InvoiceReturnIn, {"data": data or ""})
-	return dump_out(InvoiceReturnOut, InvoiceService().make_return(_parse_invoice_data(body.data)))
+	payload = validate_in(InvoiceSyncBody, json.loads(body.data))
+	return dump_out(InvoiceReturnOut, InvoiceService().make_return(payload.model_dump()))
 
 
 @frappe.whitelist(methods=["POST"])
 def void(data: str | None = None):
 	body = validate_in(InvoiceVoidIn, {"data": data or ""})
-	return dump_out(InvoiceVoidOut, InvoiceService().void(_parse_invoice_data(body.data)))
+	payload = validate_in(InvoiceSyncBody, json.loads(body.data))
+	return dump_out(InvoiceVoidOut, InvoiceService().void(payload.model_dump()))
 
 
 @frappe.whitelist(methods=["POST"])
 def validate_cart(data: str | None = None):
 	body = validate_in(InvoiceValidateCartIn, {"data": data or ""})
-	payload = _parse_invoice_data(body.data)
+	payload = validate_in(InvoiceSyncBody, json.loads(body.data))
+	payload_data = payload.model_dump()
 	cart = validate_in(
 		CartValidateIn,
-		{"items": payload.get("items", []), "warehouse": payload.get("warehouse") or ""},
+		{"items": payload_data.get("items", []), "warehouse": payload_data.get("warehouse") or ""},
 	)
 	return dump_out(CartValidateOut, ValidationService.validate_cart_items(cart.model_dump()))

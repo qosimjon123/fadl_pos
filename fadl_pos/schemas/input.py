@@ -1,6 +1,20 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+import json
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from fadl_pos.api.login.constants import (
+	ENCRYPTED_QR_MAX_LENGTH,
+	ENCRYPTED_QR_MIN_LENGTH,
+	PIN_CODE_LENGTH,
+	PIN_CODE_PATTERN,
+	PWD_MAX_LENGTH,
+	PWD_MIN_LENGTH,
+	USR_MAX_LENGTH,
+	USR_MIN_LENGTH,
+)
 
 
 class InputSchema(BaseModel):
@@ -45,17 +59,25 @@ class CloseShiftQuery(InputSchema):
 
 
 class LoginQuery(InputSchema):
-	usr: str = Field(min_length=1)
-	pwd: str = Field(min_length=1)
+	usr: str = Field(min_length=USR_MIN_LENGTH, max_length=USR_MAX_LENGTH)
+	pwd: str = Field(min_length=PWD_MIN_LENGTH, max_length=PWD_MAX_LENGTH)
 
 
 class QRLoginQuery(InputSchema):
-	encrypted_qr: str = Field(min_length=1)
-	pin_code: str = Field(min_length=1)
+	encrypted_qr: str = Field(min_length=ENCRYPTED_QR_MIN_LENGTH, max_length=ENCRYPTED_QR_MAX_LENGTH)
+	pin_code: str = Field(
+		min_length=PIN_CODE_LENGTH,
+		max_length=PIN_CODE_LENGTH,
+		pattern=PIN_CODE_PATTERN,
+	)
 
 
 class QRGenerateQuery(InputSchema):
-	pin_code: str = Field(min_length=1)
+	pin_code: str = Field(
+		min_length=PIN_CODE_LENGTH,
+		max_length=PIN_CODE_LENGTH,
+		pattern=PIN_CODE_PATTERN,
+	)
 
 
 class CartLineIn(InputSchema):
@@ -96,11 +118,31 @@ class OpenShiftIn(InputSchema):
 	pos_profile: str = Field(min_length=1)
 	company: str = Field(min_length=1)
 	comment: str | None = None
+	balance_details: list[BalanceDetailItem] = Field(default_factory=list)
+
+	@field_validator("balance_details", mode="before")
+	@classmethod
+	def coerce_balance_details(cls, value: Any) -> Any:
+		if value is None or (isinstance(value, str) and not value.strip()):
+			return []
+		if isinstance(value, str):
+			return json.loads(value)
+		return value
 
 
 class CloseShiftIn(InputSchema):
 	opening_entry_name: str = Field(min_length=1)
 	comment: str | None = None
+	closing_data: list[ClosingReconciliationItem] | None = None
+
+	@field_validator("closing_data", mode="before")
+	@classmethod
+	def coerce_closing_data(cls, value: Any) -> Any:
+		if value is None or (isinstance(value, str) and not value.strip()):
+			return None
+		if isinstance(value, str):
+			return json.loads(value)
+		return value
 
 
 # --- Customer manage ---
@@ -161,6 +203,13 @@ class StockSingleIn(InputSchema):
 class StockBatchIn(InputSchema):
 	item_codes: list[str]
 	warehouse: str = Field(min_length=1)
+
+	@field_validator("item_codes", mode="before")
+	@classmethod
+	def coerce_item_codes(cls, value: Any) -> Any:
+		if isinstance(value, str):
+			return json.loads(value) if value.strip() else []
+		return value
 
 
 class StockWarehousesIn(InputSchema):

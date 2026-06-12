@@ -4,7 +4,7 @@ Stock availability, serial helpers, and POS Profile warehouse updates.
 All read paths delegate to ERPNext stock/POS helpers (``get_stock_availability``,
 ``auto_fetch_serial_number``, ``get_pos_reserved_serial_nos``).
 
-**StockService.get(action, **kwargs)** returns action-specific dicts — see ``fadl_pos.api.stock.get`` docstring.
+Called from ``fadl_pos.api.stock`` — one method per whitelist endpoint.
 ``update_warehouse`` mutates **POS Profile** after permission + company checks.
 """
 
@@ -21,25 +21,6 @@ from fadl_pos.services._base import BaseService
 class StockService(BaseService):
 	"""Wrap native POS stock queries and profile warehouse maintenance."""
 
-	def get(self, action: str, **kwargs) -> dict:
-		"""
-		Unified entry point for stock actions.
-		"""
-		if action == "single":
-			return self.get_single(**kwargs)
-		elif action == "batch":
-			return self.get_batch(**kwargs)
-		elif action == "warehouses":
-			return self.get_warehouses(**kwargs)
-		elif action == "bundle":
-			return self.get_bundle(**kwargs)
-		elif action == "auto_serial":
-			return self.auto_fetch_serial(**kwargs)
-		elif action == "reserved_serials":
-			return self.get_reserved_serials(**kwargs)
-		else:
-			frappe.throw(_("Invalid action: {0}").format(action))
-
 	def get_single(self, item_code, warehouse):
 		"""
 		Native: Get stock availability for a single item in a warehouse.
@@ -51,9 +32,6 @@ class StockService(BaseService):
 		"""
 		Get native POS availability for multiple items.
 		"""
-		if isinstance(item_codes, str):
-			item_codes = frappe.parse_json(item_codes)
-
 		final_results = []
 		for code in item_codes:
 			actual_qty, _, _ = native_get_stock(code, warehouse)
@@ -74,7 +52,7 @@ class StockService(BaseService):
 		)
 		return {"warehouses": warehouses}
 
-	def  get_bundle(self, item_code, warehouse):
+	def get_bundle(self, item_code, warehouse):
 		"""
 		Native POS availability for a Product Bundle or stock item.
 		"""
@@ -145,12 +123,14 @@ class StockService(BaseService):
 			"warehouse": warehouse,
 		}
 
-	def get_warehouses(self, company: str) -> list:
+	def get_warehouses(self, company: str | None = None, pos_profile: str | None = None) -> list:
 		"""
 		Get all active leaf warehouses for the company.
 		"""
+		if not company and pos_profile:
+			company = frappe.db.get_value("POS Profile", pos_profile, "company")
 		if not company:
-			frappe.throw(_("Company is required to get warehouses."))
+			frappe.throw(_("Company or pos_profile is required."))
 
 		warehouses = frappe.get_list(
 			"Warehouse",

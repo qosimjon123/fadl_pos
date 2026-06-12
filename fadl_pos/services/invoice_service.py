@@ -4,7 +4,6 @@ import frappe
 from frappe import _
 
 from fadl_pos.services._base import BaseService
-from fadl_pos.services.validation_service import ValidationService
 
 # Headers / rolled-up totals must be recomputed on the server (see AccountsController.validate).
 _PARENT_TOTAL_KEYS = frozenset(
@@ -72,21 +71,6 @@ def _strip_untrusted_invoice_payload(data: dict) -> dict:
 
 class InvoiceService(BaseService):
 	"""Create/update/submit POS or Sales invoices using ERPNext document controllers."""
-
-	def sync(self, action: str, data: dict) -> dict:
-		"""Dispatch by ``action``; see module docstring for shapes."""
-		if action == "save":
-			return self.save(data)
-		elif action == "submit":
-			return self.submit(data)
-		elif action == "return":
-			return self.make_return(data)
-		elif action == "void":
-			return self.void(data)
-		elif action == "validate":
-			return self.validate_cart(data)
-		else:
-			frappe.throw(_("Invalid action: {0}").format(action))
 
 	@staticmethod
 	def _invoice_doctype_from_settings() -> str:
@@ -250,6 +234,3 @@ class InvoiceService(BaseService):
 			"message": _("Invoice {0} voided").format(name),
 		}
 
-	def validate_cart(self, data: dict) -> dict:
-		"""Pre-flight stock checks; does not persist."""
-		return ValidationService.validate_cart_items(data)

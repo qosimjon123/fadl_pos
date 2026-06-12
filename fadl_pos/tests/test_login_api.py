@@ -148,7 +148,7 @@ class TestLoginWithQrAPI(IntegrationTestCase):
 		self._post_request("/api/v2/method/fadl_pos.api.login.login_endpoints.login_qr")
 		for bad in ("000000", "42424"):
 			with self.subTest(pin=bad):
-				with self.assertRaises(frappe.AuthenticationError):
+				with self.assertRaises((frappe.AuthenticationError, frappe.ValidationError)):
 					login_qr(blob, bad)
 
 	def test_login_qr_rejects_missing_blob(self):

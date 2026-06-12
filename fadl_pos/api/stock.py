@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import frappe
-from frappe import _
 
 from fadl_pos.api.rpc_boundary import dump_out, validate_in
 from fadl_pos.schemas import (
@@ -27,16 +26,6 @@ from fadl_pos.schemas import (
 from fadl_pos.services.stock_service import StockService
 
 
-def _resolve_company(body: StockWarehousesIn) -> str:
-	if body.company:
-		return body.company
-	if body.pos_profile:
-		company = frappe.db.get_value("POS Profile", body.pos_profile, "company")
-		if company:
-			return company
-	frappe.throw(_("Company or pos_profile is required."))
-
-
 @frappe.whitelist()
 def single(item_code: str | None = None, warehouse: str | None = None):
 	body = validate_in(StockSingleIn, {"item_code": item_code or "", "warehouse": warehouse or ""})
@@ -52,12 +41,8 @@ def batch(item_codes: object | None = None, warehouse: str | None = None):
 @frappe.whitelist()
 def warehouses(company: str | None = None, pos_profile: str | None = None):
 	body = validate_in(StockWarehousesIn, {"company": company, "pos_profile": pos_profile})
-	co = _resolve_company(body)
-	# Service returns list for get_warehouses — wrap for Out
-	rows = StockService().get_warehouses(co)
-	if isinstance(rows, list):
-		return StockWarehousesListOut.dump({"warehouses": rows})
-	return dump_out(StockWarehousesListOut, rows)
+	rows = StockService().get_warehouses(company=body.company, pos_profile=body.pos_profile)
+	return dump_out(StockWarehousesListOut, {"warehouses": rows})
 
 
 @frappe.whitelist()

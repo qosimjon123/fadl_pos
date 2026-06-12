@@ -16,24 +16,12 @@ from frappe.utils import cint, get_datetime
 from frappe.utils.nestedset import get_root_of
 
 from fadl_pos.services._base import BaseService
-from fadl_pos.services.bootstrap_service import BootstrapService
 
 
 class CatalogService(BaseService):
-	"""Catalog list/search; delegates ``boot`` to :class:`BootstrapService`."""
+	"""Catalog list/search; boot is handled by :class:`BootstrapService` via ``fadl_pos.api.catalog``."""
 
 	# --- Public API ---
-
-	def get(self, action: str, **kwargs) -> dict:
-		"""RPC router: ``items`` | ``boot``."""
-		if action == "items":
-			return self.get_items(**kwargs)
-		if action == "boot":
-			pos_profile = (kwargs.get("pos_profile") or "").strip()
-			if not pos_profile:
-				frappe.throw(_("pos_profile is required for boot"))
-			return BootstrapService().boot(pos_profile)
-		frappe.throw(_("Invalid action: {0}").format(action))
 
 	def get_items(
 		self, start, page_length=15, price_list=None, item_group=None, pos_profile=None, search_term=""
