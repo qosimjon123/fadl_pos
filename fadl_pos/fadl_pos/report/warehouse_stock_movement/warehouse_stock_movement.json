@@ -1,0 +1,34 @@
+{
+ "add_total_row": 1,
+ "columns": [],
+ "creation": "2025-02-12 15:45:52.268806",
+ "disabled": 0,
+ "docstatus": 0,
+ "doctype": "Report",
+ "filters": [],
+ "idx": 0,
+ "is_standard": "Yes",
+ "letter_head": "Default",
+ "letterhead": null,
+ "modified": "2025-02-12 15:45:52.268806",
+ "modified_by": "Administrator",
+ "module": "Fadl Pos",
+ "name": "Warehouse Stock Movement",
+ "owner": "Administrator",
+ "prepared_report": 0,
+ "ref_doctype": "Stock Ledger Entry",
+ "report_name": "Warehouse Stock Movement",
+ "report_type": "Script Report",
+ "roles": [
+  {
+   "role": "Stock User"
+  },
+  {
+   "role": "Accounts Manager"
+  },
+  {
+   "role": "Pharmacy User"
+  }
+ ],
+ "timeout": 0
+}

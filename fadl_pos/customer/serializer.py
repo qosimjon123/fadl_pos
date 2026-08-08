@@ -59,6 +59,7 @@ class CustomerCreateIn(InputSchema):
 	customer_type: str = "Individual"
 	gender: str | None = None
 	tax_id: str | None = None
+	referral_code: str | None = None
 	birthday: str | None = None
 	company: str | None = None
 	pos_profile: str | None = None
@@ -79,6 +80,7 @@ class CustomerUpdateIn(InputSchema):
 	customer_type: str | None = None
 	gender: str | None = None
 	tax_id: str | None = None
+	referral_code: str | None = None
 	birthday: str | None = None
 	discount: float | None = None
 
@@ -170,6 +172,7 @@ class CustomerDetailsOut(OutputSchema):
 	loyalty_points: float = 0
 	loyalty_program: CustomerLoyaltyProgramOut | None = None
 	discount: float = 0
+	referral_code: str | None = None
 	birthday: str | None = None
 	addresses: list[AddressOut] = Field(default_factory=list)
 

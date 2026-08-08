@@ -23,7 +23,7 @@ fixture_auto_order = True
 # Apps
 # ------------------
 
-# required_apps = []
+required_apps = ["erpnext"]
 
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
@@ -58,10 +58,16 @@ fixture_auto_order = True
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {
+	"POS Profile": "public/js/pos_profile.js",
+	"Sales Invoice": "public/js/invoice.js",
+	"Company": "public/js/company.js",
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
+
+extend_bootinfo = "fadl_pos.settings.boot.extend_bootinfo"
 
 # Svg Icons
 # ------------------
@@ -92,16 +98,21 @@ fixture_auto_order = True
 # ----------
 
 # add methods and filters to jinja environment
-# jinja = {
-# 	"methods": "fadl_pos.utils.jinja_methods",
-# 	"filters": "fadl_pos.utils.jinja_filters"
-# }
+jinja = {
+	"methods": [
+		"fadl_pos.printing.jinja_helpers.xpos_barcode",
+		"fadl_pos.printing.jinja_helpers.xpos_barcode_uri",
+		"fadl_pos.printing.jinja_helpers.xpos_qrcode",
+		"fadl_pos.printing.jinja_helpers.xpos_qrcode_uri",
+		"fadl_pos.printing.jinja_helpers.xpos_item_barcode",
+	],
+}
 
 # Installation
 # ------------
 
 # before_install = "fadl_pos.install.before_install"
-# after_install = "fadl_pos.install.after_install"
+after_install = "fadl_pos.install.after_install"
 after_migrate = "fadl_pos.install.after_migrate"
 
 # Uninstallation
@@ -145,22 +156,37 @@ after_migrate = "fadl_pos.install.after_migrate"
 # permission_query_conditions = {
 # 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
 # }
-#
-# has_permission = {
-# 	"Event": "frappe.desk.doctype.event.event.has_permission",
-# }
+
+has_permission = {
+	"Sales Invoice": "fadl_pos.printing.permission.invoice_has_permission",
+	"POS Invoice": "fadl_pos.printing.permission.invoice_has_permission",
+}
 
 # Document Events
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"Sales Invoice": {
+		"validate": "fadl_pos.invoice.events.validate",
+		"before_submit": "fadl_pos.invoice.events.before_submit",
+		"before_cancel": "fadl_pos.invoice.events.before_cancel",
+		"on_cancel": "fadl_pos.invoice.events.on_cancel",
+	},
+	"POS Invoice": {
+		"validate": "fadl_pos.invoice.events.validate",
+		"before_submit": "fadl_pos.invoice.events.before_submit",
+		"before_cancel": "fadl_pos.invoice.events.before_cancel",
+		"on_cancel": "fadl_pos.invoice.events.on_cancel",
+	},
+	"Customer": {
+		"validate": "fadl_pos.customer.events.validate",
+		"after_insert": "fadl_pos.customer.events.after_insert",
+	},
+	"POS Role": {
+		"on_update": "fadl_pos.permissions.permission.clear_role_permission_cache_on_update",
+	},
+}
 
 # Scheduled Tasks
 # ---------------
@@ -192,9 +218,10 @@ after_migrate = "fadl_pos.install.after_migrate"
 # ------------------------------
 #
 # Specify custom mixins to extend the standard doctype controller.
-# extend_doctype_class = {
-# 	"Task": "fadl_pos.custom.task.CustomTaskMixin"
-# }
+extend_doctype_class = {
+	"POS Invoice": "fadl_pos.invoice.overrides.pos_invoice.CustomPOSInvoice",
+	"POS Invoice Merge Log": "fadl_pos.invoice.overrides.pos_invoice_merge_log.CustomPOSInvoiceMergeLog",
+}
 
 # Overriding Methods
 # ------------------------------

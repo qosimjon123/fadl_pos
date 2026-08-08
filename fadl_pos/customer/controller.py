@@ -2,11 +2,9 @@
 
 """Customer: search / CRUD / addresses / credit / loyalty business logic.
 
-Ported from ``xpos.api.customers`` (the canonical xpos customer API). The
-referral-code -> auto-coupon automation from xpos is intentionally NOT
-ported here (depends on xpos's own ``Referral Code`` doctype and is not
-needed for invoicing) — ``discount`` / ``birthday`` are the only xpos
-Customer custom fields carried over (see ``fixtures/1_custom_field.json``).
+Ported from ``xpos.api.customers`` (the canonical xpos customer API), including
+``referral_code`` / ``birthday`` / ``discount``. Referral DocType automation
+hooks live in :mod:`fadl_pos.customer.events` (parity with ``xpos.x_pos.api.customer``).
 """
 
 from __future__ import annotations
@@ -190,6 +188,7 @@ class CustomerController(BaseController):
 					"conversion_factor": 0,
 				}
 
+		referral_code = getattr(cust, "referral_code", None)
 		birthday = getattr(cust, "birthday", None)
 
 		from erpnext.selling.doctype.customer.customer import get_credit_limit
@@ -214,6 +213,7 @@ class CustomerController(BaseController):
 			"loyalty_points": loyalty,
 			"loyalty_program": loyalty_program,
 			"discount": pos_discount,
+			"referral_code": referral_code,
 			"birthday": birthday,
 			"addresses": address_list,
 		}
@@ -228,6 +228,7 @@ class CustomerController(BaseController):
 		customer_type: str = "Individual",
 		gender: str | None = None,
 		tax_id: str | None = None,
+		referral_code: str | None = None,
 		birthday: str | None = None,
 		company: str | None = None,
 		address_line1: str | None = None,
@@ -262,6 +263,11 @@ class CustomerController(BaseController):
 			customer.tax_id = tax_id
 		if gender:
 			customer.gender = gender
+		if referral_code:
+			try:
+				customer.referral_code = referral_code
+			except Exception:
+				pass
 		if birthday:
 			try:
 				customer.birthday = birthday
@@ -312,7 +318,7 @@ class CustomerController(BaseController):
 			if field in data:
 				doc.set(field, data[field])
 
-		pos_fields = ["birthday", "discount"]
+		pos_fields = ["referral_code", "birthday", "discount"]
 		for field in pos_fields:
 			if field in data:
 				try:
