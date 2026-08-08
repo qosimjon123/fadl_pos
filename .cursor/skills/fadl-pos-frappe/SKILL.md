@@ -22,6 +22,7 @@ For the full catalog and routing guide, read `.cursor/reference/frappe-claude-sk
 
 ## Local Fadl POS Rules
 
+- Fadl POS is migrating to an isolated-module template (Django-app-like): each functional area gets its own top-level `fadl_pos/<feature>/` package with hardcoded file names — `controller.py` (actions), `permission.py`, `serializer.py` (Pydantic v2, validators as `@field_validator` methods), `whitelist.py` (`@frappe.whitelist()` entry points), `events.py`, and (only when the feature has a real document-status machine) `workflow.py`. Shared primitives for all of these live in `fadl_pos/core/`. Not-yet-migrated features keep the older `api/<feature>.py` + `services/<feature>_service.py` + `schemas/{input,output}.py` layout. See `fadl_pos/login/` for the reference implementation of the new template.
 - Keep Fadl POS changes inside `frappe-bench/apps/fadl_pos` unless the user explicitly asks to modify Frappe/ERPNext core.
 - For core DocTypes like `User`, create Custom Fields from app code or use a linked custom DocType; do not rely on Customize Form.
 - Put persistent schema/customization setup in app hooks, migrations, fixtures, or install/migrate helpers so it survives deploys.

@@ -46,6 +46,7 @@ class CatalogItemOut(OutputSchema):
 class CatalogOut(OutputSchema):
 	items: list[CatalogItemOut]
 
+
 CatalogResponseSerializer = CatalogOut
 
 
@@ -130,22 +131,8 @@ PaymentMethodSerializer = PaymentMethodOut
 PosProfileResponseSerializer = PosProfileOut
 
 
-class AuthTokenOut(OutputSchema):
-	token: str
-
-
-class QRGenerateOut(OutputSchema):
-	encrypted_qr: str
-
-
-class QRPayloadPlain(OutputSchema):
-	v: int
-	api_key: str
-	qr_token: str
-
-
-AuthTokenResponse = AuthTokenOut
-QRGenerateResponse = QRGenerateOut
+# Login schemas (AuthTokenOut, QRGenerateOut, ...) moved to
+# `fadl_pos.login.serializer`.
 
 
 class CartValidateOut(OutputSchema):

@@ -1,38 +1,25 @@
 # Copyright (c) 2026, FadlTech team and contributors
 
-"""Frappe RPC boundary: validate In models, normalize Out."""
+"""Frappe RPC boundary: validate In models, normalize Out.
+
+The canonical implementation now lives in :mod:`fadl_pos.core.serializer`; this
+module is a thin re-export kept for the feature modules that have not moved to
+the `core/` + `<feature>/` template yet (``session.py``, ``invoice.py``,
+``catalog.py``, ``customer.py``, ``stock.py``, ``offers.py``, ``payment.py``,
+``invoice_list.py``). New/migrated modules should import from
+``fadl_pos.core.serializer`` directly.
+"""
 
 from __future__ import annotations
 
-from typing import Any, TypeVar
+from fadl_pos.core.errors import validation_error as raise_validation_error
+from fadl_pos.core.serializer import InputSchema, OutputSchema, dump_out, dump_out_list, validate_in
 
-import frappe
-from pydantic import BaseModel, ValidationError
-
-from fadl_pos.schemas import InputSchema, OutputSchema
-
-TIn = TypeVar("TIn", bound=InputSchema)
-TOut = TypeVar("TOut", bound=OutputSchema)
-
-
-def raise_validation_error(exc: ValidationError) -> None:
-	frappe.throw(str(exc.errors()), frappe.ValidationError)
-
-
-def validate_in(model: type[TIn], raw: dict[str, Any] | None) -> TIn:
-	try:
-		return model.model_validate(raw or {})
-	except ValidationError as exc:
-		raise_validation_error(exc)
-		raise AssertionError("unreachable")
-
-
-def dump_out(model: type[TOut], result: Any) -> dict[str, Any]:
-	"""Serialize service result through Out schema (idempotent if already shaped)."""
-	if isinstance(result, dict):
-		return model.dump(result)
-	return result
-
-
-def dump_out_list(model: type[TOut], results: list[Any]) -> list[dict[str, Any]]:
-	return [dump_out(model, item) for item in results]
+__all__ = [
+	"InputSchema",
+	"OutputSchema",
+	"dump_out",
+	"dump_out_list",
+	"raise_validation_error",
+	"validate_in",
+]

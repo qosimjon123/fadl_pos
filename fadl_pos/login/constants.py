@@ -1,6 +1,6 @@
 # Copyright (c) 2026, FadlTech team and contributors
 
-"""Shared login API field limits (Pydantic + auth_service)."""
+"""Shared login API field limits (Pydantic + controller)."""
 
 from __future__ import annotations
 
@@ -15,3 +15,6 @@ USR_MIN_LENGTH = 5
 USR_MAX_LENGTH = 100
 PWD_MIN_LENGTH = 8
 PWD_MAX_LENGTH = 100
+
+QR_PAYLOAD_VERSION = 1
+QR_TOKEN_LENGTH = 32

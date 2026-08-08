@@ -5,16 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from fadl_pos.api.login.constants import (
-	ENCRYPTED_QR_MAX_LENGTH,
-	ENCRYPTED_QR_MIN_LENGTH,
-	PIN_CODE_LENGTH,
-	PIN_CODE_PATTERN,
-	PWD_MAX_LENGTH,
-	PWD_MIN_LENGTH,
-	USR_MAX_LENGTH,
-	USR_MIN_LENGTH,
-)
+# Login schemas (LoginQuery, QRLoginQuery, QRGenerateQuery, ...) moved to
+# `fadl_pos.login.serializer`.
 
 
 class InputSchema(BaseModel):
@@ -56,28 +48,6 @@ class OpenShiftQuery(InputSchema):
 class CloseShiftQuery(InputSchema):
 	opening_entry_name: str = Field(min_length=1)
 	comment: str | None = None
-
-
-class LoginQuery(InputSchema):
-	usr: str = Field(min_length=USR_MIN_LENGTH, max_length=USR_MAX_LENGTH)
-	pwd: str = Field(min_length=PWD_MIN_LENGTH, max_length=PWD_MAX_LENGTH)
-
-
-class QRLoginQuery(InputSchema):
-	encrypted_qr: str = Field(min_length=ENCRYPTED_QR_MIN_LENGTH, max_length=ENCRYPTED_QR_MAX_LENGTH)
-	pin_code: str = Field(
-		min_length=PIN_CODE_LENGTH,
-		max_length=PIN_CODE_LENGTH,
-		pattern=PIN_CODE_PATTERN,
-	)
-
-
-class QRGenerateQuery(InputSchema):
-	pin_code: str = Field(
-		min_length=PIN_CODE_LENGTH,
-		max_length=PIN_CODE_LENGTH,
-		pattern=PIN_CODE_PATTERN,
-	)
 
 
 class CartLineIn(InputSchema):

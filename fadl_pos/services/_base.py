@@ -1,11 +1,11 @@
-"""Shared service base: session user gate for RPC layers."""
+"""Shared service base: session user gate for RPC layers.
 
-import frappe
-from frappe import _
+The canonical implementation now lives in :mod:`fadl_pos.core.permission`
+(``BaseController`` / ``require_session_user``); this module is a thin alias
+kept for services that have not moved to the `core/` + `<feature>/` template
+yet. New/migrated modules should use ``fadl_pos.core.permission`` directly.
+"""
 
+from fadl_pos.core.permission import BaseController as BaseService
 
-class BaseService:
-	def __init__(self, user: str | None = None):
-		self.user = user or frappe.session.user
-		if self.user == "Guest":
-			frappe.throw(_("Log in to continue."), frappe.AuthenticationError)
+__all__ = ["BaseService"]

@@ -1,6 +1,6 @@
 # Copyright (c) 2026, FadlTech team and contributors
 
-"""Integration tests for the Fadl POS token/QR login API."""
+"""Integration tests for the Fadl POS token/QR login API (needs Frappe DB/session)."""
 
 from __future__ import annotations
 
@@ -12,9 +12,9 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import set_request
 from frappe.utils.password import update_password
 
-from fadl_pos.api.login.auth_service import TokenAuthService
-from fadl_pos.api.login.login_endpoints import clear_sessions, generate_qr, login, login_qr
-from fadl_pos.schemas import AuthTokenOut
+from fadl_pos.login.controller import TokenAuthService
+from fadl_pos.login.serializer import AuthTokenOut
+from fadl_pos.login.whitelist import clear_sessions, generate_qr, login, login_qr
 
 
 class TestLoginWithQrAPI(IntegrationTestCase):
@@ -97,21 +97,33 @@ class TestLoginWithQrAPI(IntegrationTestCase):
 
 	def test_login_returns_basic_token(self):
 		frappe.set_user("Guest")
-		self._post_request("/api/v2/method/fadl_pos.api.login.login_endpoints.login")
+		self._post_request("/api/v2/method/fadl_pos.login.whitelist.login")
 		token = login(self.TEST_EMAIL, self.TEST_PASSWORD)
 		self._assert_basic_token_valid_for_user(token, self.TEST_EMAIL)
 
 	def test_login_accepts_legacy_usr_pwd_names(self):
 		frappe.set_user("Guest")
-		self._post_request("/api/v2/method/fadl_pos.api.login.login_endpoints.login")
+		self._post_request("/api/v2/method/fadl_pos.login.whitelist.login")
 		token = login(usr=self.TEST_EMAIL, pwd=self.TEST_PASSWORD)
 		self._assert_basic_token_valid_for_user(token, self.TEST_EMAIL)
 
 	def test_login_rejects_bad_password(self):
 		frappe.set_user("Guest")
-		self._post_request("/api/v2/method/fadl_pos.api.login.login_endpoints.login")
+		self._post_request("/api/v2/method/fadl_pos.login.whitelist.login")
 		with self.assertRaises(frappe.AuthenticationError):
 			login(self.TEST_EMAIL, "not-the-password")
+
+	def test_generate_qr_rejects_administrator_session(self):
+		"""Unlike most services (which allow Administrator via `core.permission`),
+		login self-service actions reject standard accounts outright."""
+		frappe.set_user("Administrator")
+		with self.assertRaises(frappe.AuthenticationError):
+			generate_qr("123456")
+
+	def test_clear_sessions_rejects_administrator_session(self):
+		frappe.set_user("Administrator")
+		with self.assertRaises(frappe.AuthenticationError):
+			clear_sessions()
 
 	def test_generate_qr_stores_encrypted_payload_and_regenerates(self):
 		frappe.set_user(self.TEST_EMAIL)
@@ -138,14 +150,14 @@ class TestLoginWithQrAPI(IntegrationTestCase):
 	def test_login_qr_success_returns_basic_token(self):
 		blob = self._bootstrap_blob()
 		frappe.set_user("Guest")
-		self._post_request("/api/v2/method/fadl_pos.api.login.login_endpoints.login_qr")
+		self._post_request("/api/v2/method/fadl_pos.login.whitelist.login_qr")
 		token = login_qr(blob, "424242")
 		self._assert_basic_token_valid_for_user(token, self.TEST_EMAIL)
 
 	def test_login_qr_rejects_wrong_or_invalid_pin(self):
 		blob = self._bootstrap_blob()
 		frappe.set_user("Guest")
-		self._post_request("/api/v2/method/fadl_pos.api.login.login_endpoints.login_qr")
+		self._post_request("/api/v2/method/fadl_pos.login.whitelist.login_qr")
 		for bad in ("000000", "42424"):
 			with self.subTest(pin=bad):
 				with self.assertRaises((frappe.AuthenticationError, frappe.ValidationError)):
@@ -153,7 +165,7 @@ class TestLoginWithQrAPI(IntegrationTestCase):
 
 	def test_login_qr_rejects_missing_blob(self):
 		frappe.set_user("Guest")
-		self._post_request("/api/v2/method/fadl_pos.api.login.login_endpoints.login_qr")
+		self._post_request("/api/v2/method/fadl_pos.login.whitelist.login_qr")
 		with self.assertRaises((frappe.AuthenticationError, frappe.ValidationError)):
 			login_qr("", "424242")
 
@@ -161,7 +173,7 @@ class TestLoginWithQrAPI(IntegrationTestCase):
 		blob = self._bootstrap_blob()
 		tampered = blob[:-3] + ("A" if blob[-3] != "A" else "B") + blob[-2:]
 		frappe.set_user("Guest")
-		self._post_request("/api/v2/method/fadl_pos.api.login.login_endpoints.login_qr")
+		self._post_request("/api/v2/method/fadl_pos.login.whitelist.login_qr")
 		with self.assertRaises(frappe.AuthenticationError):
 			login_qr(tampered, "424242")
 
@@ -172,13 +184,13 @@ class TestLoginWithQrAPI(IntegrationTestCase):
 		generate_qr(pin)
 
 		frappe.set_user("Guest")
-		self._post_request("/api/v2/method/fadl_pos.api.login.login_endpoints.login_qr")
+		self._post_request("/api/v2/method/fadl_pos.login.whitelist.login_qr")
 		with self.assertRaises(frappe.AuthenticationError):
 			login_qr(blob, pin)
 
 	def test_clear_sessions_rotates_secret_and_clears_qr(self):
 		frappe.set_user("Guest")
-		self._post_request("/api/v2/method/fadl_pos.api.login.login_endpoints.login")
+		self._post_request("/api/v2/method/fadl_pos.login.whitelist.login")
 		old_token = login(self.TEST_EMAIL, self.TEST_PASSWORD)
 		old_api_key, old_api_secret = self._decode_basic_token(self._basic_header(old_token))
 
@@ -194,8 +206,9 @@ class TestLoginWithQrAPI(IntegrationTestCase):
 		with self.assertRaises(frappe.AuthenticationError):
 			validate_api_key_secret(old_api_key, old_api_secret)
 
-	def test_legacy_service_wrappers_still_delegate_to_v2_contract(self):
+	def test_legacy_controller_alias_still_delegates_to_v2_contract(self):
+		"""`TokenAuthService` is a backward-compat alias for `LoginController`."""
 		frappe.set_user("Guest")
-		self._post_request("/api/v2/method/fadl_pos.api.login.login_endpoints.login")
+		self._post_request("/api/v2/method/fadl_pos.login.whitelist.login")
 		token = TokenAuthService().login(self.TEST_EMAIL, self.TEST_PASSWORD)
 		self._assert_basic_token_valid_for_user(token, self.TEST_EMAIL)
