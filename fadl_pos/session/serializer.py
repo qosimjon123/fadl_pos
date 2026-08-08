@@ -11,7 +11,6 @@ from typing import Any
 from pydantic import Field, field_validator
 
 from fadl_pos.core.serializer import InputSchema, OutputSchema
-from fadl_pos.schemas.output import ChecklistItem, Checklists
 
 __all__ = [
 	"BalanceDetailItem",
@@ -72,6 +71,15 @@ class CloseShiftIn(InputSchema):
 		if isinstance(value, str):
 			return json.loads(value)
 		return value
+
+
+class ChecklistItem(OutputSchema):
+	title: str
+
+
+class Checklists(OutputSchema):
+	opening: list[ChecklistItem]
+	closing: list[ChecklistItem]
 
 
 class PaymentMethodOut(OutputSchema):
