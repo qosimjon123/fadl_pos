@@ -77,16 +77,6 @@ class CustomerTransactionsOut(OutputSchema):
 	transactions: list[dict[str, Any]]
 
 
-class InternalPaymentMethod(OutputSchema):
-	"""Row from SQL; not exposed in session RPC."""
-
-	pos_profile: str
-	mode_of_payment: str
-	default: int
-	custom_required_opening_balance: int = 0
-	idx: int = 0
-
-
 class ChecklistItem(OutputSchema):
 	title: str
 
@@ -96,39 +86,9 @@ class Checklists(OutputSchema):
 	closing: list[ChecklistItem]
 
 
-class PaymentMethodOut(OutputSchema):
-	"""Opening/closing form: one row per MOP with Required Opening Balance (server-filtered)."""
-
-	name: str
-
-
-class PosProfileOut(OutputSchema):
-	name: str
-	status: str
-	company: str
-	opening_entry: str | None = None
-	opening_entry_date: datetime | date | None = None
-	checklists: list[Checklists] | None = None
-	payment_methods: list[PaymentMethodOut] | None = None
-
-
-class SessionListOut(OutputSchema):
-	pos_profiles: list[PosProfileOut]
-
-
-class CloseShiftOut(OutputSchema):
-	status: str
-	closing_entry: str
-	is_final: bool
-	entry_status: str
-	error_message: str | None = None
-	message: str | None = None
-
-
-SessionListResponseSerializer = SessionListOut
-CloseShiftResponse = CloseShiftOut
-PaymentMethodSerializer = PaymentMethodOut
-PosProfileResponseSerializer = PosProfileOut
+# Session schemas (PosProfileOut, SessionListOut, CloseShiftOut, ...) moved to
+# `fadl_pos.session.serializer`. `ChecklistItem` / `Checklists` stay here since
+# `BootPosOut` (bootstrap, not yet migrated) still depends on them.
 
 
 # Login schemas (AuthTokenOut, QRGenerateOut, ...) moved to
@@ -269,10 +229,6 @@ class BootPosOut(OutputSchema):
 	warehouses: list[dict[str, Any]]
 	checklists: Checklists
 	taxes: list[TaxTemplateOut]
-
-
-# --- Session envelope (get_list / open_shift return shape) ---
-SessionListEnvelopeOut = SessionListOut
 
 
 # --- Stock (per-endpoint) ---

@@ -1,20 +1,26 @@
+# Copyright (c) 2026, FadlTech team and contributors
+
+"""POS shift session: list / open / close business logic."""
+
+from __future__ import annotations
+
 import frappe
 from erpnext.accounts.doctype.pos_closing_entry.pos_closing_entry import make_closing_entry_from_opening
 from frappe import _
 from frappe.utils import cint
 from frappe.utils.data import strip_html
 
-from fadl_pos.services._base import BaseService
+from fadl_pos.core.permission import BaseController
+from fadl_pos.session import events
+from fadl_pos.session.permission import require_shift_owner
+from fadl_pos.session.workflow import assert_can_close
 
 
-
-class SessionService(BaseService):
+class SessionController(BaseController):
 	@staticmethod
 	def _required_mop_names(profile_mops: list[dict]) -> set[str]:
 		return {
-			pm["mode_of_payment"]
-			for pm in profile_mops
-			if cint(pm.get("custom_required_opening_balance"))
+			pm["mode_of_payment"] for pm in profile_mops if cint(pm.get("custom_required_opening_balance"))
 		}
 
 	@staticmethod
@@ -346,6 +352,8 @@ class SessionService(BaseService):
 		if comment:
 			self._add_timeline_comment(new_pos_opening, comment)
 
+		events.shift_opened(user=self.user, pos_profile=pos_profile, opening_entry=new_pos_opening.name)
+
 		return self.get_list()
 
 	def close_shift(
@@ -359,11 +367,8 @@ class SessionService(BaseService):
 		"""
 		opening_entry = frappe.get_doc("POS Opening Entry", opening_entry_name)
 
-		if opening_entry.status != "Open":
-			frappe.throw(_("This POS Opening Entry is already closed or cancelled."))
-
-		if opening_entry.user != self.user:
-			frappe.throw(_("You can only close your own shift."))
+		assert_can_close(opening_entry.status)
+		require_shift_owner(opening_entry.user, self.user)
 
 		# 1. Generate closing entry using native builder
 		closing_entry = make_closing_entry_from_opening(opening_entry)
@@ -382,6 +387,10 @@ class SessionService(BaseService):
 
 		if comment:
 			self._add_timeline_comment(closing_entry, comment)
+
+		events.shift_closed(
+			user=self.user, opening_entry=opening_entry.name, closing_entry=closing_entry.name
+		)
 
 		return {
 			"status": "success" if closing_entry.status in ["Submitted", "Queued"] else "failed",

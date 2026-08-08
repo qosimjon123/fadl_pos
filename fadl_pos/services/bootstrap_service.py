@@ -12,8 +12,8 @@ from frappe.query_builder import DocType, Order
 from fadl_pos.meta import POS_PROFILE_FIELDS
 from fadl_pos.services._base import BaseService
 from fadl_pos.services.customer_service import CustomerService
-from fadl_pos.services.session_service import SessionService
 from fadl_pos.services.stock_service import StockService
+from fadl_pos.session.controller import SessionController
 
 
 class BootstrapService(BaseService):
@@ -49,12 +49,9 @@ class BootstrapService(BaseService):
 		opening = frappe.get_doc("POS Opening Entry", open_rows[0].name)
 
 		pay_by_mop = {
-			pm["mode_of_payment"]: pm
-			for pm in SessionService()._fetch_payment_methods([pos_profile])
+			pm["mode_of_payment"]: pm for pm in SessionController()._fetch_payment_methods([pos_profile])
 		}
-		returns_by_mop = {
-			p.mode_of_payment: p.allow_in_returns for p in (profile_doc.payments or [])
-		}
+		returns_by_mop = {p.mode_of_payment: p.allow_in_returns for p in (profile_doc.payments or [])}
 
 		balance_details_out = []
 		for row in opening.balance_details or []:

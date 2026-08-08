@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import frappe
 
-from fadl_pos.services.session_service import SessionService
+from fadl_pos.session.controller import SessionController
 
 
 def _pm(
@@ -29,7 +29,7 @@ def _pm(
 
 class TestNormalizeOpeningBalances(unittest.TestCase):
 	def setUp(self):
-		self.svc = SessionService.__new__(SessionService)
+		self.svc = SessionController.__new__(SessionController)
 
 	def test_all_profile_mops_with_zero_for_non_required(self):
 		profile_mops = [_pm("Cash AED", required=1), _pm("Card", required=0)]
@@ -67,23 +67,21 @@ class TestNormalizeOpeningBalances(unittest.TestCase):
 	def test_no_required_configured_raises(self):
 		profile_mops = [_pm("Card", required=0)]
 		with self.assertRaises(frappe.ValidationError):
-			self.svc._normalize_opening_balances(
-				profile_mops, [{"name": "Card", "opening_amount": 0}]
-			)
+			self.svc._normalize_opening_balances(profile_mops, [{"name": "Card", "opening_amount": 0}])
 
 
 class TestRequiredMopNames(unittest.TestCase):
 	def test_only_flagged_mops(self):
 		profile_mops = [_pm("Cash AED", required=1), _pm("Card", required=0)]
 		self.assertEqual(
-			SessionService._required_mop_names(profile_mops),
+			SessionController._required_mop_names(profile_mops),
 			{"Cash AED"},
 		)
 
 
 class TestPrepareClosingReconciliation(unittest.TestCase):
 	def setUp(self):
-		self.svc = SessionService.__new__(SessionService)
+		self.svc = SessionController.__new__(SessionController)
 
 	def _recon_row(self, mop: str, *, expected: float = 100.0):
 		return SimpleNamespace(
@@ -104,12 +102,12 @@ class TestPrepareClosingReconciliation(unittest.TestCase):
 		)
 		cash_row = self._recon_row("Cash AED", expected=50.0)
 		card_row = self._recon_row("Card", expected=20.0)
-		closing_entry = SimpleNamespace(payment_reconciliation=[cash_row, card_row], append=lambda *a, **k: None)
+		closing_entry = SimpleNamespace(
+			payment_reconciliation=[cash_row, card_row], append=lambda *a, **k: None
+		)
 		closing_data = [{"name": "Cash AED", "closing_amount": 480}]
 
-		self.svc._prepare_closing_reconciliation(
-			closing_entry, opening, closing_data, profile_mops
-		)
+		self.svc._prepare_closing_reconciliation(closing_entry, opening, closing_data, profile_mops)
 		self.assertEqual(cash_row.closing_amount, 480.0)
 		self.assertEqual(card_row.closing_amount, card_row.expected_amount)
 

@@ -29,27 +29,6 @@ class CustomerManageBody(InputSchema):
 	model_config = ConfigDict(extra="allow", str_strip_whitespace=True)
 
 
-class BalanceDetailItem(InputSchema):
-	name: str = Field(min_length=1)
-	opening_amount: float
-
-
-class ClosingReconciliationItem(InputSchema):
-	name: str = Field(min_length=1)
-	closing_amount: float
-
-
-class OpenShiftQuery(InputSchema):
-	pos_profile: str = Field(min_length=1)
-	company: str = Field(min_length=1)
-	comment: str | None = None
-
-
-class CloseShiftQuery(InputSchema):
-	opening_entry_name: str = Field(min_length=1)
-	comment: str | None = None
-
-
 class CartLineIn(InputSchema):
 	item_code: str = Field(min_length=1)
 	qty: float = Field(ge=0)
@@ -69,50 +48,14 @@ class InvoiceListQuery(PaginatedQuery):
 	status: str = "Paid"
 
 
-BalanceDetailItemType = BalanceDetailItem
-ClosingReconciliationItemType = ClosingReconciliationItem
-
 # --- Aliases (RPC boundary names) ---
 CustomerListIn = CustomerListQuery
 CustomerDetailsIn = CustomerDetailsQuery
 CustomerRecentTransactionsIn = CustomerDetailsQuery
 InvoiceListHistoryIn = InvoiceListQuery
 
-
-# --- Session ---
-class SessionListIn(InputSchema):
-	pass
-
-
-class OpenShiftIn(InputSchema):
-	pos_profile: str = Field(min_length=1)
-	company: str = Field(min_length=1)
-	comment: str | None = None
-	balance_details: list[BalanceDetailItem] = Field(default_factory=list)
-
-	@field_validator("balance_details", mode="before")
-	@classmethod
-	def coerce_balance_details(cls, value: Any) -> Any:
-		if value is None or (isinstance(value, str) and not value.strip()):
-			return []
-		if isinstance(value, str):
-			return json.loads(value)
-		return value
-
-
-class CloseShiftIn(InputSchema):
-	opening_entry_name: str = Field(min_length=1)
-	comment: str | None = None
-	closing_data: list[ClosingReconciliationItem] | None = None
-
-	@field_validator("closing_data", mode="before")
-	@classmethod
-	def coerce_closing_data(cls, value: Any) -> Any:
-		if value is None or (isinstance(value, str) and not value.strip()):
-			return None
-		if isinstance(value, str):
-			return json.loads(value)
-		return value
+# Session schemas (SessionListIn, OpenShiftIn, CloseShiftIn, ...) moved to
+# `fadl_pos.session.serializer`.
 
 
 # --- Customer manage ---

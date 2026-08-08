@@ -1,27 +1,31 @@
 # Copyright (c) 2026, FadlTech team and contributors
 
-"""POS shift session whitelisted RPC."""
+"""POS shift session RPC endpoints for Frappe `/api/method/...` calls."""
 
 from __future__ import annotations
 
 import frappe
 
-from fadl_pos.api.rpc_boundary import dump_out, validate_in
-from fadl_pos.schemas import (
+from fadl_pos.core.serializer import dump_out, validate_in
+from fadl_pos.session.controller import SessionController
+from fadl_pos.session.serializer import (
 	CloseShiftIn,
 	CloseShiftOut,
 	OpenShiftIn,
 	SessionListEnvelopeOut,
 	SessionListIn,
 )
-from fadl_pos.services.session_service import SessionService
+
+
+def _controller() -> SessionController:
+	return SessionController()
 
 
 @frappe.whitelist(methods=["GET", "POST"])
 def get_list():
-	"""``/api/method/fadl_pos.api.session.get_list``"""
+	"""``/api/method/fadl_pos.session.whitelist.get_list``"""
 	validate_in(SessionListIn, {})
-	result = SessionService().get_list()
+	result = _controller().get_list()
 	if isinstance(result, list):
 		return [dump_out(SessionListEnvelopeOut, block) for block in result]
 	return dump_out(SessionListEnvelopeOut, result)
@@ -34,7 +38,7 @@ def open_shift(
 	balance_details: object | None = None,
 	comment: str | None = None,
 ):
-	"""``/api/method/fadl_pos.api.session.open_shift``"""
+	"""``/api/method/fadl_pos.session.whitelist.open_shift``"""
 	body = validate_in(
 		OpenShiftIn,
 		{
@@ -44,7 +48,7 @@ def open_shift(
 			"balance_details": balance_details,
 		},
 	)
-	result = SessionService().open_shift(
+	result = _controller().open_shift(
 		body.pos_profile,
 		body.company,
 		[row.model_dump() for row in body.balance_details],
@@ -61,7 +65,7 @@ def close_shift(
 	closing_data: object | None = None,
 	comment: str | None = None,
 ):
-	"""``/api/method/fadl_pos.api.session.close_shift``"""
+	"""``/api/method/fadl_pos.session.whitelist.close_shift``"""
 	body = validate_in(
 		CloseShiftIn,
 		{
@@ -70,12 +74,8 @@ def close_shift(
 			"closing_data": closing_data,
 		},
 	)
-	closing_rows = (
-		[row.model_dump() for row in body.closing_data] if body.closing_data is not None else None
-	)
+	closing_rows = [row.model_dump() for row in body.closing_data] if body.closing_data is not None else None
 	return dump_out(
 		CloseShiftOut,
-		SessionService().close_shift(
-			body.opening_entry_name, closing_rows, comment=body.comment
-		),
+		_controller().close_shift(body.opening_entry_name, closing_rows, comment=body.comment),
 	)

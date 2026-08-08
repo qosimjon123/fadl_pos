@@ -7,8 +7,8 @@ from __future__ import annotations
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from fadl_pos.api.rpc_boundary import validate_in
-from fadl_pos.schemas import CloseShiftIn, OpenShiftIn
+from fadl_pos.core.serializer import validate_in
+from fadl_pos.session.serializer import CloseShiftIn, OpenShiftIn
 
 
 class TestSessionParse(IntegrationTestCase):
