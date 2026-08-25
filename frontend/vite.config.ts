@@ -10,11 +10,27 @@ export default defineConfig({
   plugins: [
     vue(),
     vueDevTools(),
-    ui(),
+    ui({
+      ui: {
+        colors: {
+          primary: 'green',
+          secondary: 'blue',
+          success: 'green',
+          info: 'blue',
+          warning: 'yellow',
+          error: 'red',
+          neutral: 'slate',
+        },
+      },
+    })
   ],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
+  },
+  server: {
+    host: true, // слушать 0.0.0.0 — нужно для туннеля
+    allowedHosts: true,
   },
 })

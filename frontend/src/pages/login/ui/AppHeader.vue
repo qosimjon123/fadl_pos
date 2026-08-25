@@ -1,7 +1,7 @@
 <template>
   <UHeader title="Fadl POS" to="/login">
     <template #right>
-      <UColorModeButton />
+      <UColorModeButton color="primary" variant="ghost" />
     </template>
   </UHeader>
 </template>
