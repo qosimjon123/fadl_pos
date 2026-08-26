@@ -55,23 +55,33 @@ const { isDesktop } = useResponsiveOverlay()
     <DrawerPortal>
       <DrawerOverlay :class="drawerDefaults.overlay" v-bind="drawerProps?.overlay" />
 
-      <DrawerContent :class="drawerDefaults.content" v-bind="drawerProps?.content">
-        <DrawerHandle :class="drawerDefaults.handle" v-bind="drawerProps?.handle" />
-
-        <DrawerTitle v-if="title" :class="drawerDefaults.title">
-          {{ title }}
-        </DrawerTitle>
-
-        <DrawerDescription v-if="description" :class="drawerDefaults.description">
-          {{ description }}
-        </DrawerDescription>
-
-        <div v-if="$slots.body" :class="drawerDefaults.body">
-          <slot name="body" />
+      <DrawerContent
+        :class="drawerDefaults.content"
+        v-bind="drawerProps?.content"
+        @open-auto-focus.prevent
+      >
+        <div :class="drawerDefaults.handleArea">
+          <DrawerHandle :class="drawerDefaults.handle" v-bind="drawerProps?.handle" />
         </div>
 
-        <div v-if="$slots.footer" :class="drawerDefaults.footer">
-          <slot name="footer" />
+        <div :class="drawerDefaults.sections">
+          <header v-if="title || description" :class="drawerDefaults.header">
+            <DrawerTitle v-if="title" :class="drawerDefaults.title">
+              {{ title }}
+            </DrawerTitle>
+
+            <DrawerDescription v-if="description" :class="drawerDefaults.description">
+              {{ description }}
+            </DrawerDescription>
+          </header>
+
+          <div v-if="$slots.body" :class="drawerDefaults.body">
+            <slot name="body" />
+          </div>
+
+          <div v-if="$slots.footer" :class="drawerDefaults.footer">
+            <slot name="footer" />
+          </div>
         </div>
       </DrawerContent>
     </DrawerPortal>

@@ -41,6 +41,7 @@ const { draftUrl, open, openSettings, cancelSettings, saveServerUrl } = useServe
           color="neutral"
           variant="outline"
           class="flex-1 justify-center"
+          size="xl"
           @click="cancelSettings()"
         />
         <UButton
@@ -48,6 +49,7 @@ const { draftUrl, open, openSettings, cancelSettings, saveServerUrl } = useServe
           color="primary"
           class="flex-1 justify-center"
           :disabled="!draftUrl.trim()"
+          size="xl"
           @click="saveServerUrl()"
         />
       </div>

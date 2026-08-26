@@ -17,10 +17,13 @@ export const modalOverlayDefaults = {
 export const drawerDefaults = {
   overlay: `${softOverlay} fixed inset-0 z-40`,
   content:
-    'responsive-drawer-content fixed inset-x-0 bottom-0 z-50 flex max-h-[90dvh] flex-col rounded-t-lg bg-default px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 shadow-lg outline-none',
-  handle: 'mx-auto mb-3 h-1.5 w-12 shrink-0 rounded-full bg-accented',
+    'responsive-drawer-content fixed inset-x-0 bottom-0 z-50 flex max-h-[95dvh] flex-col rounded-t-lg bg-default pb-[max(1rem,env(safe-area-inset-bottom))] shadow-lg outline-none',
+  handleArea: 'shrink-0 px-4 pt-3',
+  handle: 'mx-auto h-1.5 w-12 rounded-full bg-accented',
+  sections: 'flex min-h-0 flex-1 flex-col divide-y divide-default',
+  header: 'flex flex-col gap-1 p-4 sm:px-6',
   title: 'text-lg font-semibold text-highlighted',
-  description: 'mt-1 text-sm text-muted',
-  body: 'flex-1 overflow-y-auto py-2',
-  footer: 'mt-4 shrink-0',
+  description: 'text-sm text-muted',
+  body: 'flex-1 overflow-y-auto p-4 sm:p-6',
+  footer: 'shrink-0 p-4 sm:px-6',
 } as const
