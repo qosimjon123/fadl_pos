@@ -5,7 +5,7 @@ import Theme from '@/shared/theme/ui/Theme.vue'
 </script>
 
 <template>
-  <UHeader title="Fadl POS" to="/login">
+  <UHeader title="Fadl POS" to="/login" :toggle="false">
     <template #right>
       <div class="flex items-center gap-1">
         <Locale />

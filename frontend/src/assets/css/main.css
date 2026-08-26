@@ -11,17 +11,6 @@
 }
 
 .dark {
-  --ui-color-primary-50: oklch(0.982 0.018 155.826);
-  --ui-color-primary-100: oklch(0.982 0.018 155.826);
-  --ui-color-primary-200: oklch(0.962 0.044 156.743);
-  --ui-color-primary-300: oklch(0.925 0.084 155.995);
-  --ui-color-primary-400: oklch(0.871 0.15 154.449);
-  --ui-color-primary-500: oklch(0.792 0.209 151.711);
-  --ui-color-primary-600: oklch(0.723 0.219 149.579);
-  --ui-color-primary-700: oklch(0.627 0.194 149.214);
-  --ui-color-primary-800: oklch(0.527 0.154 150.069);
-  --ui-color-primary-900: oklch(0.448 0.119 151.328);
-  --ui-color-primary-950: oklch(0.393 0.095 152.535);
   --ui-color-secondary-50: oklch(0.97 0.014 254.604);
   --ui-color-secondary-100: oklch(0.97 0.014 254.604);
   --ui-color-secondary-200: oklch(0.932 0.032 255.585);
@@ -77,4 +66,19 @@
   --ui-color-error-800: oklch(0.505 0.213 27.518);
   --ui-color-error-900: oklch(0.444 0.177 26.899);
   --ui-color-error-950: oklch(0.396 0.141 25.723);
+}
+
+
+@theme static {
+  --color-fadl-50: #e6fff5;
+  --color-fadl-100: #b3ffe4;
+  --color-fadl-200: #80ffd2;
+  --color-fadl-300: #4dffc1;
+  --color-fadl-400: #1affaf;
+  --color-fadl-500: #00d38d;
+  --color-fadl-600: #00b377;
+  --color-fadl-700: #008c5d;
+  --color-fadl-800: #006644;
+  --color-fadl-900: #00402b;
+  --color-fadl-950: #00291c;
 }

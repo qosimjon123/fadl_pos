@@ -11,7 +11,7 @@ const { draftUrl, open, openSettings, cancelSettings, saveServerUrl } = useServe
     color="primary"
     variant="ghost"
     size="xl"
-    class="cursor-pointer w-10"
+    class="cursor-pointer"
     aria-label="Server settings"
     @click="openSettings()"
   />
