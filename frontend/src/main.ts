@@ -6,7 +6,9 @@ import ui from '@nuxt/ui/vue-plugin'
 
 import App from './App.vue'
 import router from './router'
+import { setupFrappeApi } from '@/shared/server/api/fetch'
 
+setupFrappeApi()
 const app = createApp(App)
 
 app.use(createPinia())
