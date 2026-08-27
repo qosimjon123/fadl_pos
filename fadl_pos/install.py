@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import frappe
-from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 from fadl_pos.permissions.constants import ALL_PERMISSION_NAMES, DEFAULT_ROLES, POS_PERMISSIONS
 
@@ -16,25 +15,6 @@ def after_install():
 
 
 def after_migrate():
-	# update=True — при изменении label/description в коде запись Custom Field в БД обновится
-	# (одиночный create_custom_field не трогает уже существующее поле).
-	create_custom_fields(
-		{
-			"User": [
-				{
-					"fieldname": "qr_encrypted_data",
-					"label": "QR Encrypted Data",
-					"fieldtype": "Long Text",
-					"insert_after": "api_secret",
-					"module": "Fadl Pos",
-					"description": "Current encrypted Fadl POS QR payload. Regenerated QR keys replace this value.",
-					"print_hide": 1,
-					"is_system_generated": 0,
-				}
-			]
-		},
-		update=True,
-	)
 	# Idempotent seed so existing sites pick up new permission keys.
 	seed_pos_permissions()
 	seed_default_roles()

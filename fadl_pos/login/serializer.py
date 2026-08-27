@@ -19,7 +19,6 @@ from fadl_pos.login.constants import (
 	PWD_MAX_LENGTH,
 	PWD_MIN_LENGTH,
 	QR_PAYLOAD_VERSION,
-	QR_TOKEN_LENGTH,
 	USR_MAX_LENGTH,
 	USR_MIN_LENGTH,
 )
@@ -27,12 +26,12 @@ from fadl_pos.login.constants import (
 _PIN_RE = re.compile(PIN_CODE_PATTERN)
 
 
-class LoginQuery(InputSchema):
+class LoginRequest(InputSchema):
 	usr: str = Field(min_length=USR_MIN_LENGTH, max_length=USR_MAX_LENGTH)
 	pwd: str = Field(min_length=PWD_MIN_LENGTH, max_length=PWD_MAX_LENGTH)
 
 
-class _PinCodeIn(InputSchema):
+class _PinCodeRequest(InputSchema):
 	pin_code: str = Field(min_length=PIN_CODE_LENGTH, max_length=PIN_CODE_LENGTH)
 
 	@field_validator("pin_code")
@@ -43,20 +42,20 @@ class _PinCodeIn(InputSchema):
 		return value
 
 
-class QRGenerateQuery(_PinCodeIn):
+class QRGenerateRequest(_PinCodeRequest):
 	pass
 
 
-class QRLoginQuery(_PinCodeIn):
+class QRLoginRequest(_PinCodeRequest):
 	encrypted_qr: str = Field(min_length=ENCRYPTED_QR_MIN_LENGTH, max_length=ENCRYPTED_QR_MAX_LENGTH)
 
 
-class QRPayloadIn(InputSchema):
+class QRPayloadRequest(InputSchema):
 	"""Decrypted QR blob shape; validated by the controller after PIN decryption."""
 
 	v: int
 	api_key: str = Field(min_length=1)
-	qr_token: str = Field(min_length=QR_TOKEN_LENGTH, max_length=QR_TOKEN_LENGTH)
+	api_secret: str = Field(min_length=1)
 
 	@field_validator("v")
 	@classmethod
@@ -66,15 +65,9 @@ class QRPayloadIn(InputSchema):
 		return value
 
 
-class AuthTokenOut(OutputSchema):
+class AuthTokenResponse(OutputSchema):
 	token: str
 
 
-class QRGenerateOut(OutputSchema):
+class QRGenerateResponse(OutputSchema):
 	encrypted_qr: str
-
-
-# --- Compat aliases (kept for anything still importing the old names) ---
-AuthTokenResponse = AuthTokenOut
-QRGenerateResponse = QRGenerateOut
-QRPayloadPlain = QRPayloadIn

@@ -48,8 +48,7 @@ class TestRequireSessionUser(IntegrationTestCase):
 			require_session_user("Guest")
 
 	def test_accepts_administrator(self):
-		"""Generic gate only rejects Guest; Administrator is fine here (unlike
-		login's stricter `require_authenticated_session`, see `login/permission.py`)."""
+		"""Generic gate only rejects Guest; Administrator is allowed."""
 		self.assertEqual(require_session_user("Administrator"), "Administrator")
 
 	def test_accepts_real_user(self):

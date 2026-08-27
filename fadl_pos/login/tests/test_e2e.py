@@ -52,7 +52,7 @@ class TestLoginHappyPathE2E(IntegrationTestCase):
 	def tearDownClass(cls):
 		if frappe.db.exists("User", cls.TEST_EMAIL):
 			frappe.delete_doc("User", cls.TEST_EMAIL, force=True)
-			frappe.db.commit()
+		frappe.db.commit()
 		super().tearDownClass()
 
 	def setUp(self):
@@ -82,12 +82,10 @@ class TestLoginHappyPathE2E(IntegrationTestCase):
 		self._simulate_request("/api/v2/method/fadl_pos.login.whitelist.login")
 		password_token = login(self.TEST_EMAIL, self.TEST_PASSWORD)["token"]
 		self.assertTrue(password_token.startswith("Basic "))
+		self.assertEqual(frappe.session.user, self.TEST_EMAIL)
 
-		# The token is only good as authentication once the client sends it back
-		# (Authorization: Basic ...) on a subsequent request — simulate that here.
 		api_key, api_secret = self._decode_basic_token(password_token)
 		validate_api_key_secret(api_key, api_secret)
-		self.assertEqual(frappe.session.user, self.TEST_EMAIL)
 
 		# 2. Cashier enrolls a PIN-protected QR for fast re-login.
 		encrypted_qr = generate_qr(self.PIN)["encrypted_qr"]
@@ -98,14 +96,15 @@ class TestLoginHappyPathE2E(IntegrationTestCase):
 		self._simulate_request("/api/v2/method/fadl_pos.login.whitelist.login_qr")
 		qr_token = login_qr(encrypted_qr, self.PIN)["token"]
 		self.assertTrue(qr_token.startswith("Basic "))
+		self.assertEqual(frappe.session.user, self.TEST_EMAIL)
 
 		qr_api_key, qr_api_secret = self._decode_basic_token(qr_token)
 		validate_api_key_secret(qr_api_key, qr_api_secret)
-		self.assertEqual(frappe.session.user, self.TEST_EMAIL)
 
 		# 4. Cashier signs out everywhere; the QR/token issued above must die with it.
 		frappe.set_user(self.TEST_EMAIL)
 		clear_sessions()
-		self.assertFalse(frappe.db.get_value("User", self.TEST_EMAIL, "qr_encrypted_data"))
+		with self.assertRaises(frappe.AuthenticationError):
+			login_qr(encrypted_qr, self.PIN)
 		with self.assertRaises(frappe.AuthenticationError):
 			validate_api_key_secret(qr_api_key, qr_api_secret)

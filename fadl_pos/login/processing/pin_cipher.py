@@ -1,6 +1,5 @@
 # Copyright (c) 2026, FadlTech team and contributors
 
-
 """Шифрование полезной нагрузки ключом, производным от PIN (каскад логина)."""
 
 from __future__ import annotations

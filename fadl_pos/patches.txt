@@ -7,3 +7,5 @@ fadl_pos.patches.add_composite_indexes
 fadl_pos.patches.add_item_fulltext_index
 fadl_pos.patches.seed_pos_role_permissions
 fadl_pos.patches.remove_pos_coupon_referral
+fadl_pos.patches.remove_qr_encrypted_data
+fadl_pos.patches.remove_qr_token
