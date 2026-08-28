@@ -1,17 +1,12 @@
-import { FrappeApp } from 'frappe-js-sdk';
-import { useServerUrl } from '../composables/useServerUrl';
+import { FrappeApp } from 'frappe-js-sdk'
+
+import {
+  attachFrappeUnauthorizedInterceptor,
+  attachRawAuthorizationHeaderInterceptor,
+} from './interceptor'
+import { useServerUrl } from '../composables/useServerUrl'
 let frappeApp: FrappeApp | null = null;
 
-
-
-function createFrappeApp(url: string): FrappeApp {
-  const app = new FrappeApp(url);
-
-  // attachRawAuthorizationHeaderInterceptor(app.axios);
-  // attachFrappeUnauthorizedInterceptor(app.axios);
-
-  return app;
-}
 
 export function resetFrappeApp(): void {
   frappeApp = null;
@@ -21,7 +16,9 @@ export function getFrappeApp(): FrappeApp | null {
   const url = useServerUrl().serverUrl;
   if (!url) return null;
   if (!frappeApp || frappeApp.url !== url.value) {
-    frappeApp = createFrappeApp(url.value);
+    frappeApp = new FrappeApp(url.value);
+    attachRawAuthorizationHeaderInterceptor(frappeApp.axios)
+    attachFrappeUnauthorizedInterceptor(frappeApp.axios)
   }
   return frappeApp;
 }
