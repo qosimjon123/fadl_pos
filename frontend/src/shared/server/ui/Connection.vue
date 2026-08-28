@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { connected } from '@/shared/server/store/connection'
+import { useConnection } from '@/shared/server/composables/useConnection'
 
+defineOptions({ name: 'ServerConnection' })
+const connected = useConnection()
 </script>
 
 <template>

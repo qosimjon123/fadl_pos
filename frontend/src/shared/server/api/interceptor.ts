@@ -20,7 +20,7 @@ export function attachFrappeUnauthorizedInterceptor(axios: AxiosInstance) {
       return r
     },
     async (e: AxiosError) => {
-      connected.value = !e.response || e.response.status >= 500
+      if (!e.response || e.response.status >= 500) connected.value = false
       const data = e.response?.data as { exc_type?: string; errors?: { type: string }[] }
       const type = data?.exc_type ?? data?.errors?.[0]?.type
       if (type && FRAPPE_SESSION_TERMINATED_EXC_TYPES.has(type)) {
