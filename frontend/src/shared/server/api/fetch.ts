@@ -1,17 +1,43 @@
-import { useServerUrl } from '@/shared/server/composables/useServerUrl'
-import { getToken } from '@/shared/server/store/token'
+import { FrappeApp } from 'frappe-js-sdk';
+import { useServerUrl } from '../composables/useServerUrl';
+let frappeApp: FrappeApp | null = null;
 
-export function setupFrappeApi() {
-  const { serverUrl } = useServerUrl()
-  const base = globalThis.fetch
 
-  globalThis.fetch = (input, init) => {
-    if (typeof input !== 'string' || !input.startsWith('/api/')) return base(input, init)
 
-    const headers = new Headers(init?.headers)
-    const token = getToken()
-    if (token) headers.set('Authorization', token)
+function createFrappeApp(url: string): FrappeApp {
+  const app = new FrappeApp(url);
 
-    return base(new URL(input, serverUrl.value), { ...init, credentials: 'omit', headers })
+  // attachRawAuthorizationHeaderInterceptor(app.axios);
+  // attachFrappeUnauthorizedInterceptor(app.axios);
+
+  return app;
+}
+
+export function resetFrappeApp(): void {
+  frappeApp = null;
+}
+
+export function getFrappeApp(): FrappeApp | null {
+  const url = useServerUrl().serverUrl;
+  if (!url) return null;
+  if (!frappeApp || frappeApp.url !== url.value) {
+    frappeApp = createFrappeApp(url.value);
   }
+  return frappeApp;
+}
+
+export function getFrappeCall() {
+  return getFrappeApp()?.call() ?? null;
+}
+
+export function getFrappeDb() {
+  return getFrappeApp()?.db() ?? null;
+}
+
+export function getFrappeAuth() {
+  return getFrappeApp()?.auth() ?? null;
+}
+
+export function getFrappeFileUpload() {
+  return getFrappeApp()?.file() ?? null;
 }
