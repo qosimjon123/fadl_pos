@@ -4,13 +4,14 @@ import { useQuery } from '@tanstack/vue-query'
 import { ping } from '@/shared/server/api/ping'
 import { connected } from '@/shared/server/store/connection'
 import { useServerUrl } from './useServerUrl'
+import { CONNECTION_TIMEOUT } from '../config/storage'
 
 export function useConnection() {
   const { serverUrl } = useServerUrl()
   const { isSuccess } = useQuery({
     queryKey: computed(() => ['ping', serverUrl.value]),
     queryFn: ping,
-    refetchInterval: (query) => (query.state.status === 'error' ? 10000 : false),
+    refetchInterval: (query) => (query.state.status === 'error' ? CONNECTION_TIMEOUT : false),
   })
   return computed(() => connected.value || isSuccess.value)
 }

@@ -6,3 +6,4 @@ export const FRAPPE_SESSION_TERMINATED_EXC_TYPES = new Set<string>([
     'SessionExpired',
   ]);
   
+export const CONNECTION_TIMEOUT = 5000;
